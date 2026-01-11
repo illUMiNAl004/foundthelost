@@ -808,13 +808,38 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
 
 /**
  * LocationPicker Component
- * Real map for selecting location using Leaflet
+ * Real map for selecting location using Leaflet with current location support
  */
 const LocationPicker = ({ initialLocation, onSelect, onCancel }) => {
   const [selectedLocation, setSelectedLocation] = useState(initialLocation);
+  const [gettingLocation, setGettingLocation] = useState(false);
   
   const handleMapClick = (latlng) => {
     setSelectedLocation({ lat: latlng.lat, lng: latlng.lng });
+  };
+  
+  const handleUseCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      alert('Geolocation is not supported by your browser');
+      return;
+    }
+    
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setSelectedLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setGettingLocation(false);
+      },
+      (error) => {
+        console.error('Error getting location:', error);
+        alert('Unable to get your location. Please select on the map.');
+        setGettingLocation(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
   };
   
   return (
@@ -855,12 +880,34 @@ const LocationPicker = ({ initialLocation, onSelect, onCancel }) => {
             />
             <MapClickHandler onLocationSelect={handleMapClick} />
           </LeafletMap>
+          
+          {/* Current Location Button */}
+          <button
+            onClick={handleUseCurrentLocation}
+            disabled={gettingLocation}
+            className="absolute bottom-4 right-4 z-[1000] bg-white text-slate-900 px-4 py-2 rounded-lg shadow-lg flex items-center gap-2 hover:bg-slate-100 transition-colors disabled:opacity-50"
+          >
+            {gettingLocation ? (
+              <>
+                <div className="w-4 h-4 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
+                Getting location...
+              </>
+            ) : (
+              <>
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                </svg>
+                Use My Location
+              </>
+            )}
+          </button>
         </div>
         
         {/* Footer with coordinates */}
         <div className="p-4 bg-slate-900 border-t border-slate-800">
           <p className="text-xs text-slate-400 text-center mb-1">
-            📍 Tap on the map to select the location
+            📍 Tap on the map or use your current location
           </p>
           <p className="text-xs text-emerald-400 text-center font-mono">
             {selectedLocation.lat.toFixed(6)}, {selectedLocation.lng.toFixed(6)}

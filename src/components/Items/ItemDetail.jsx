@@ -5,11 +5,10 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import supabase from '../../utils/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../Common/Toast';
 import { formatRelativeTime, CATEGORIES, ITEM_COLORS, CONDITIONS } from '../../utils/constants';
-import { findMatchesForLostItem, findMatchesForFoundItem } from '../../utils/scoring';
+import { findMatchesForLostItem, findMatchesForFoundItem } from '../../utils/matchingService';
 import Button from '../Common/Button';
 import { Card, CardContent } from '../Common/Card';
 import Modal, { ConfirmModal } from '../Common/Modal';
@@ -32,39 +31,79 @@ const ItemDetail = () => {
   const isLost = type === 'lost';
   const isOwner = user?.id === (isLost ? item?.user_id : item?.finder_id);
 
-  // Fetch item details
+  // Fetch item details using direct API
   const fetchItem = useCallback(async () => {
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    
     try {
       setLoading(true);
       const table = isLost ? 'lost_items' : 'found_items';
       const ownerField = isLost ? 'user_id' : 'finder_id';
 
-      const { data, error } = await supabase
-        .from(table)
-        .select('*')
-        .eq('id', id)
-        .single();
-
-      if (error) throw error;
+      // Fetch item
+      const itemResponse = await fetch(
+        `${supabaseUrl}/rest/v1/${table}?id=eq.${id}&select=*`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      
+      if (!itemResponse.ok) throw new Error('Item not found');
+      const itemData = await itemResponse.json();
+      
+      if (!itemData || itemData.length === 0) {
+        throw new Error('Item not found');
+      }
+      
+      const data = itemData[0];
       setItem(data);
 
       // Fetch owner info
-      const { data: ownerData } = await supabase
-        .from('users')
-        .select('id, name, avatar_url, karma_points')
-        .eq('id', data[ownerField])
-        .single();
+      const ownerResponse = await fetch(
+        `${supabaseUrl}/rest/v1/users?id=eq.${data[ownerField]}&select=id,name,avatar_url,karma_points`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      
+      if (ownerResponse.ok) {
+        const ownerData = await ownerResponse.json();
+        if (ownerData && ownerData.length > 0) {
+          setOwner(ownerData[0]);
+        }
+      }
 
-      setOwner(ownerData);
-
-      // Find matches
+      // Find matches - fetch opposite type items and run matching
+      const oppositeTable = isLost ? 'found_items' : 'lost_items';
+      const oppositeStatus = isLost ? 'status=in.(available,with_finder,deposited)' : 'status=in.(searching,in_discussion)';
+      
+      const oppositeResponse = await fetch(
+        `${supabaseUrl}/rest/v1/${oppositeTable}?${oppositeStatus}&select=*`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      
+      if (oppositeResponse.ok) {
+        const oppositeItems = await oppositeResponse.json();
       const matchResults = isLost
-        ? await findMatchesForLostItem(data)
-        : await findMatchesForFoundItem(data);
-
+          ? findMatchesForLostItem(data, oppositeItems)
+          : findMatchesForFoundItem(data, oppositeItems);
       setMatches(matchResults.slice(0, 5));
+      }
 
     } catch (error) {
+      console.error('Failed to load item:', error);
       toast.error('Failed to load item details');
       navigate('/');
     } finally {
@@ -403,43 +442,63 @@ const ItemDetail = () => {
         {matches.length > 0 && (
           <Card className="mt-6">
             <CardContent className="p-6">
-              <h3 className="text-white font-semibold mb-4">
-                Potential Matches ({matches.length})
+              <h3 className="text-white font-semibold mb-4 flex items-center gap-2">
+                🎯 Potential Matches
+                <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded-full text-sm">
+                  {matches.length}
+                </span>
               </h3>
               <div className="space-y-3">
-                {matches.map((match) => (
+                {matches.map((match, index) => {
+                  const matchedItem = isLost ? match.found_item : match.lost_item;
+                  if (!matchedItem) return null;
+                  
+                  return (
                   <Link
-                    key={match.id}
-                    to={`/item/${isLost ? 'found' : 'lost'}/${match.id}`}
-                    className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-slate-600 transition-colors"
+                    key={matchedItem.id || index}
+                    to={`/item/${isLost ? 'found' : 'lost'}/${matchedItem.id}`}
+                    className="flex items-center gap-4 p-3 bg-slate-800/50 rounded-lg border border-slate-700 hover:border-emerald-500/50 transition-colors"
                   >
-                    {match.photo_url ? (
+                    {matchedItem.photo_url ? (
                       <img
-                        src={match.photo_url}
-                        alt={match.item_name}
+                        src={matchedItem.photo_url}
+                        alt={matchedItem.item_name}
                         className="w-14 h-14 rounded-lg object-cover"
                       />
                     ) : (
                       <div className="w-14 h-14 rounded-lg bg-slate-700 flex items-center justify-center">
                         <svg className="w-6 h-6 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                         </svg>
                       </div>
                     )}
                     <div className="flex-1 min-w-0">
-                      <h4 className="text-white font-medium truncate">{match.item_name}</h4>
+                      <h4 className="text-white font-medium truncate">{matchedItem.item_name}</h4>
                       <p className="text-slate-400 text-sm">
-                        {match.building || 'Unknown location'} • {formatRelativeTime(match.created_at)}
+                        {matchedItem.building || 'Unknown location'} • {match.distance}
                       </p>
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {match.reasons?.slice(0, 3).map((reason, i) => (
+                          <span key={i} className="px-1.5 py-0.5 bg-slate-700 rounded text-xs text-slate-300">
+                            ✓ {reason}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="text-right">
-                      <div className="text-emerald-400 font-bold">
-                        {Math.round(match.score * 100)}%
+                      <div className={`text-lg font-bold ${
+                        match.score >= 70 ? 'text-emerald-400' : 
+                        match.score >= 50 ? 'text-yellow-400' : 'text-slate-400'
+                      }`}>
+                        {match.score}%
                       </div>
-                      <div className="text-slate-500 text-xs">match</div>
+                      <div className="text-slate-500 text-xs">
+                        {match.confidence === 'high' ? 'High' : match.confidence === 'medium' ? 'Good' : 'Low'}
+                      </div>
                     </div>
                   </Link>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

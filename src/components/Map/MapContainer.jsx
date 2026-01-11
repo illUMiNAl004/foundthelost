@@ -7,8 +7,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { MapContainer as LeafletMap, TileLayer, useMap, useMapEvents } from 'react-leaflet';
 import { useNavigate } from 'react-router-dom';
-import supabase from '../../utils/supabaseClient';
 import { UMASS_CENTER, DEFAULT_ZOOM, STATUS_COLORS } from '../../utils/constants';
+import { useAuth } from '../../hooks/useAuth';
 import MapPin from './MapPin';
 import SearchFilter from './SearchFilter';
 import MapControls from './MapControls';
@@ -51,6 +51,7 @@ const MainMapContainer = ({
 }) => {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const mapRef = useRef(null);
 
   // State
@@ -70,66 +71,133 @@ const MainMapContainer = ({
     building: 'all',
   });
 
-  // Fetch items from database
-  const fetchItems = async () => {
-    console.log('🔄 Starting to fetch items...');
+  // Fetch items from database - only user's items + matched items
+  const fetchItems = useCallback(async () => {
+    // Only fetch if user is logged in
+    if (!user) {
+      setLostItems([]);
+      setFoundItems([]);
+      setLoading(false);
+      return;
+    }
+    
     setLoading(true);
     
     try {
-      // Try direct REST API call to test connectivity
       const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
       const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
       
-      console.log('📡 Testing direct API call...');
+      // 1. Fetch user's own lost items
+      const myLostResponse = await fetch(
+        `${supabaseUrl}/rest/v1/lost_items?user_id=eq.${user.id}&select=*`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      const myLostItems = myLostResponse.ok ? await myLostResponse.json() : [];
       
-      const response = await fetch(`${supabaseUrl}/rest/v1/lost_items?select=*&limit=10`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
+      // 2. Fetch user's own found items
+      const myFoundResponse = await fetch(
+        `${supabaseUrl}/rest/v1/found_items?finder_id=eq.${user.id}&select=*`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      const myFoundItems = myFoundResponse.ok ? await myFoundResponse.json() : [];
+      
+      // 3. Get matches for user's items
+      const matchesResponse = await fetch(
+        `${supabaseUrl}/rest/v1/matches?select=*`,
+        {
+          headers: {
+            'apikey': supabaseKey,
+            'Authorization': `Bearer ${supabaseKey}`,
+          },
+        }
+      );
+      const allMatches = matchesResponse.ok ? await matchesResponse.json() : [];
+      
+      // 4. Find matched item IDs for user's items
+      const myLostIds = myLostItems.map(i => i.id);
+      const myFoundIds = myFoundItems.map(i => i.id);
+      
+      // Found items that match user's lost items
+      const matchedFoundIds = allMatches
+        .filter(m => myLostIds.includes(m.lost_item_id))
+        .map(m => m.found_item_id);
+      
+      // Lost items that match user's found items  
+      const matchedLostIds = allMatches
+        .filter(m => myFoundIds.includes(m.found_item_id))
+        .map(m => m.lost_item_id);
+      
+      // 5. Fetch matched found items (items that might be user's lost item)
+      let matchedFoundItems = [];
+      if (matchedFoundIds.length > 0) {
+        const matchedFoundResponse = await fetch(
+          `${supabaseUrl}/rest/v1/found_items?id=in.(${matchedFoundIds.join(',')})&select=*`,
+          {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+            },
+          }
+        );
+        matchedFoundItems = matchedFoundResponse.ok ? await matchedFoundResponse.json() : [];
+      }
+      
+      // 6. Fetch matched lost items (items that might belong to someone who lost it)
+      let matchedLostItems = [];
+      if (matchedLostIds.length > 0) {
+        const matchedLostResponse = await fetch(
+          `${supabaseUrl}/rest/v1/lost_items?id=in.(${matchedLostIds.join(',')})&select=*`,
+          {
+            headers: {
+              'apikey': supabaseKey,
+              'Authorization': `Bearer ${supabaseKey}`,
+            },
+          }
+        );
+        matchedLostItems = matchedLostResponse.ok ? await matchedLostResponse.json() : [];
+      }
+      
+      // Combine: user's items + matched items (no duplicates)
+      const allLostItems = [...myLostItems];
+      matchedLostItems.forEach(item => {
+        if (!allLostItems.find(i => i.id === item.id)) {
+          allLostItems.push({ ...item, isMatch: true });
+        }
       });
       
-      console.log('📡 Response status:', response.status);
-      
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('❌ API Error:', response.status, errorText);
-      } else {
-        const lost = await response.json();
-        console.log('✅ Lost items:', lost?.length || 0, 'items', lost);
-        setLostItems(lost || []);
-      }
-
-      // Fetch found items
-      const foundResponse = await fetch(`${supabaseUrl}/rest/v1/found_items?select=*&limit=10`, {
-        headers: {
-          'apikey': supabaseKey,
-          'Authorization': `Bearer ${supabaseKey}`,
-          'Content-Type': 'application/json',
-        },
+      const allFoundItems = [...myFoundItems];
+      matchedFoundItems.forEach(item => {
+        if (!allFoundItems.find(i => i.id === item.id)) {
+          allFoundItems.push({ ...item, isMatch: true });
+        }
       });
       
-      if (foundResponse.ok) {
-        const found = await foundResponse.json();
-        console.log('✅ Found items:', found?.length || 0, 'items', found);
-        setFoundItems(found || []);
-      }
+      setLostItems(allLostItems);
+      setFoundItems(allFoundItems);
 
     } catch (err) {
       console.error('❌ Fetch error:', err.message);
       setLostItems([]);
       setFoundItems([]);
     } finally {
-      console.log('🏁 Done loading');
       setLoading(false);
     }
-  };
+  }, [user]);
 
-  // Initial fetch only
+  // Fetch when user changes
   useEffect(() => {
     fetchItems();
-  }, []);
+  }, [fetchItems]);
 
   // Filter items based on current filters
   const filterItems = useCallback((items, type) => {
