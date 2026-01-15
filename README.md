@@ -1,5 +1,7 @@
 # UMass Lost & Found
 
+OUR BIG IDEA
+
 A map-based real-time lost and found platform for UMass Amherst students.
 
 ## Features
