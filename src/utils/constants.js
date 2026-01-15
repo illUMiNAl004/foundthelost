@@ -34,7 +34,9 @@ export const CATEGORIES = [
   { value: 'electronics', label: 'Electronics', icon: '📱' },
   { value: 'clothing', label: 'Clothing', icon: '👕' },
   { value: 'keys', label: 'Keys & Accessories', icon: '🔑' },
-  { value: 'wallets', label: 'Wallets & ID', icon: '👛' },
+  { value: 'ucard', label: 'UCard', icon: '🪪' },
+  { value: 'id', label: 'ID', icon: '🆔' },
+  { value: 'wallet', label: 'Wallet', icon: '👛' },
   { value: 'other', label: 'Other', icon: '📦' },
 ];
 

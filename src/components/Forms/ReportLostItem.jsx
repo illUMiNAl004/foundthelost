@@ -56,6 +56,11 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
     title: '',
     description: '',
     
+    // Category-specific fields
+    spire_id: '',      // For UCARD
+    full_name: '',     // For ID
+    owner_dob: '',     // For ID (Date of Birth)
+    
     // Step 2: Location
     location_lat: initialLocation?.lat || null,
     location_lng: initialLocation?.lng || null,
@@ -119,8 +124,18 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
     switch (step) {
       case 1:
         if (!formData.category) newErrors.category = 'Please select a category';
-        if (!formData.title.trim()) newErrors.title = 'Please enter a title';
-        if (formData.title.trim().length < 3) newErrors.title = 'Title must be at least 3 characters';
+        
+        // Category-specific validation
+        if (formData.category === 'ucard') {
+          if (!formData.spire_id.trim()) newErrors.spire_id = 'Please enter your SPIRE ID';
+          else if (!/^\d{8}$/.test(formData.spire_id.trim())) newErrors.spire_id = 'SPIRE ID must be exactly 8 digits';
+        } else if (formData.category === 'id') {
+          if (!formData.full_name.trim()) newErrors.full_name = 'Please enter the full name on the ID';
+          if (!formData.owner_dob) newErrors.owner_dob = 'Please enter the date of birth on the ID';
+        } else if (formData.category) {
+          if (!formData.title.trim()) newErrors.title = 'Please enter a title';
+          if (formData.title.trim().length < 3) newErrors.title = 'Title must be at least 3 characters';
+        }
         break;
         
       case 2:
@@ -196,12 +211,27 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
         photoUrl = await uploadPhoto();
       }
       
+      // Generate item name and description based on category
+      let itemName = '';
+      let itemDescription = '';
+      
+      if (formData.category === 'ucard') {
+        itemName = 'UCard';
+        itemDescription = `SPIRE ID: ${formData.spire_id.trim()}`;
+      } else if (formData.category === 'id') {
+        itemName = `ID - ${formData.full_name.trim()}`;
+        itemDescription = `Name: ${formData.full_name.trim()}, DOB: ${formData.owner_dob}`;
+      } else {
+        itemName = formData.title.trim();
+        itemDescription = formData.description.trim();
+      }
+      
       // Prepare lost item data - map form fields to database columns
       const lostItemData = {
         user_id: user.id,
         category: formData.category,
-        item_name: sanitizeInput(formData.title.trim()),
-        description: sanitizeInput(formData.description.trim()),
+        item_name: sanitizeInput(itemName),
+        description: sanitizeInput(itemDescription),
         latitude: formData.location_lat,
         longitude: formData.location_lng,
         building: formData.building_name,
@@ -215,6 +245,10 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
         reward_offered: formData.reward_offered,
         reward_amount: formData.reward_offered && formData.reward_amount ? formData.reward_amount : null,
         status: 'searching',
+        // Category-specific fields
+        spire_id: formData.category === 'ucard' ? formData.spire_id.trim() : null,
+        owner_name: formData.category === 'id' ? sanitizeInput(formData.full_name.trim()) : null,
+        owner_dob: formData.category === 'id' ? formData.owner_dob : null,
       };
       
       // Insert lost item using direct API call with user's auth token
@@ -357,7 +391,15 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
       <FormSelect
         label="Category"
         value={formData.category}
-        onChange={(e) => updateField('category', e.target.value)}
+        onChange={(e) => {
+          updateField('category', e.target.value);
+          // Clear category-specific fields when changing category
+          updateField('spire_id', '');
+          updateField('full_name', '');
+          updateField('owner_dob', '');
+          updateField('title', '');
+          updateField('description', '');
+        }}
         error={errors.category}
         required
       >
@@ -367,64 +409,104 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
         ))}
       </FormSelect>
       
-      <FormInput
-        label="Item Title"
-        placeholder="e.g., Black AirPods Pro with case"
-        value={formData.title}
-        onChange={(e) => updateField('title', e.target.value)}
-        error={errors.title}
-        hint="Be specific - include brand, color, distinguishing features"
-        required
-      />
+      {/* Dynamic fields based on category */}
+      {formData.category === 'ucard' ? (
+        // UCARD: Show only SPIRE ID field
+        <FormInput
+          label="SPIRE ID"
+          placeholder="Enter your 8-digit SPIRE ID"
+          value={formData.spire_id}
+          onChange={(e) => updateField('spire_id', e.target.value)}
+          error={errors.spire_id}
+          hint="Your SPIRE ID is an 8-digit number found on your UCard"
+          required
+        />
+      ) : formData.category === 'id' ? (
+        // ID: Show Full Name and Date of Birth fields
+        <>
+          <FormInput
+            label="Full Name on ID"
+            placeholder="Enter the full name as shown on the ID"
+            value={formData.full_name}
+            onChange={(e) => updateField('full_name', e.target.value)}
+            error={errors.full_name}
+            hint="Enter the name exactly as it appears on the ID"
+            required
+          />
+          <FormInput
+            label="Date of Birth on ID"
+            type="date"
+            value={formData.owner_dob}
+            onChange={(e) => updateField('owner_dob', e.target.value)}
+            error={errors.owner_dob}
+            required
+          />
+        </>
+      ) : formData.category ? (
+        // Wallet and other categories: Show standard fields
+        <>
+          <FormInput
+            label="Item Title"
+            placeholder="e.g., Black AirPods Pro with case"
+            value={formData.title}
+            onChange={(e) => updateField('title', e.target.value)}
+            error={errors.title}
+            hint="Be specific - include brand, color, distinguishing features"
+            required
+          />
+          
+          <FormTextarea
+            label="Description"
+            placeholder="Describe your item in detail. Include any unique markings, stickers, damage, or identifiable features that would help someone recognize it..."
+            value={formData.description}
+            onChange={(e) => updateField('description', e.target.value)}
+            error={errors.description}
+            rows={4}
+          />
+        </>
+      ) : null}
       
-      <FormTextarea
-        label="Description"
-        placeholder="Describe your item in detail. Include any unique markings, stickers, damage, or identifiable features that would help someone recognize it..."
-        value={formData.description}
-        onChange={(e) => updateField('description', e.target.value)}
-        error={errors.description}
-        rows={4}
-      />
-      
-      {/* Photo upload */}
-      <div>
-        <label className="block text-sm font-medium text-slate-300 mb-2">
-          Photo (recommended)
-        </label>
-        
-        {photoPreview ? (
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-800">
-            <img
-              src={photoPreview}
-              alt="Item preview"
-              className="w-full h-full object-cover"
-            />
-            <button
-              type="button"
-              onClick={removePhoto}
-              className="absolute top-2 right-2 w-8 h-8 bg-red-500/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-colors"
-            >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-        ) : (
-          <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-slate-500 hover:bg-slate-800/30 transition-colors">
-            <svg className="w-10 h-10 text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="text-sm text-slate-400">Click to upload a photo</span>
-            <span className="text-xs text-slate-500 mt-1">PNG, JPG up to 5MB</span>
-            <input
-              type="file"
-              accept="image/*"
-              onChange={handlePhotoChange}
-              className="hidden"
-            />
+      {/* Photo upload - only show for categories that need it (not UCARD or ID) */}
+      {formData.category && formData.category !== 'ucard' && formData.category !== 'id' && (
+        <div>
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Photo (recommended)
           </label>
-        )}
-      </div>
+          
+          {photoPreview ? (
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-slate-800">
+              <img
+                src={photoPreview}
+                alt="Item preview"
+                className="w-full h-full object-cover"
+              />
+              <button
+                type="button"
+                onClick={removePhoto}
+                className="absolute top-2 right-2 w-8 h-8 bg-red-500/80 hover:bg-red-500 rounded-full flex items-center justify-center text-white transition-colors"
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+          ) : (
+            <label className="flex flex-col items-center justify-center w-full h-40 border-2 border-dashed border-slate-600 rounded-lg cursor-pointer hover:border-slate-500 hover:bg-slate-800/30 transition-colors">
+              <svg className="w-10 h-10 text-slate-500 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span className="text-sm text-slate-400">Click to upload a photo</span>
+              <span className="text-xs text-slate-500 mt-1">PNG, JPG up to 5MB</span>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handlePhotoChange}
+                className="hidden"
+              />
+            </label>
+          )}
+        </div>
+      )}
     </div>
   );
   

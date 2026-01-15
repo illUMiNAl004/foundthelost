@@ -19,7 +19,8 @@ const COMMON_SYNONYMS = {
   umbrella: ['parasol', 'brolly', 'rain umbrella'],
   headphones: ['earphones', 'headset', 'audio', 'beats', 'over-ear'],
   charger: ['charging cable', 'power adapter', 'usb cable', 'lightning cable'],
-  id: ['student id', 'identification', 'id card', 'umass card', 'license'],
+  ucard: ['umass card', 'student card', 'university card', 'spire card'],
+  id: ['student id', 'identification', 'id card', 'license', 'drivers license', 'passport'],
   credit: ['credit card', 'debit card', 'bank card', 'payment card'],
 };
 
@@ -120,8 +121,14 @@ const guessCategory = (itemName) => {
   if (/key|keychain|lanyard|badge/.test(name)) {
     return 'keys';
   }
-  if (/wallet|purse|card|id|license|money/.test(name)) {
-    return 'wallets';
+  if (/ucard|spire/.test(name)) {
+    return 'ucard';
+  }
+  if (/\bid\b|license|passport|driver/.test(name)) {
+    return 'id';
+  }
+  if (/wallet|purse|billfold|money clip/.test(name)) {
+    return 'wallet';
   }
   
   return 'other';
