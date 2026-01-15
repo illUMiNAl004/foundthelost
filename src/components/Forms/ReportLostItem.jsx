@@ -121,8 +121,6 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
         if (!formData.category) newErrors.category = 'Please select a category';
         if (!formData.title.trim()) newErrors.title = 'Please enter a title';
         if (formData.title.trim().length < 3) newErrors.title = 'Title must be at least 3 characters';
-        if (!formData.description.trim()) newErrors.description = 'Please describe the item';
-        if (formData.description.trim().length < 10) newErrors.description = 'Description must be at least 10 characters';
         break;
         
       case 2:
@@ -386,7 +384,6 @@ const ReportLostItem = ({ onClose, initialLocation = null }) => {
         onChange={(e) => updateField('description', e.target.value)}
         error={errors.description}
         rows={4}
-        required
       />
       
       {/* Photo upload */}

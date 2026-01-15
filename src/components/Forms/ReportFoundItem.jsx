@@ -156,7 +156,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
           if (!formData.category) newErrors.category = 'Please select a category';
           if (!formData.title.trim()) newErrors.title = 'Please enter a title';
           if (formData.title.trim().length < 3) newErrors.title = 'Title must be at least 3 characters';
-          if (!formData.description.trim()) newErrors.description = 'Please describe the item';
           break;
           
         case 2: // Found Location
@@ -178,7 +177,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
         case 1: // Item Info
           if (!formData.category) newErrors.category = 'Please select a category';
           if (!formData.title.trim()) newErrors.title = 'Please enter a title';
-          if (!formData.description.trim()) newErrors.description = 'Please describe the item';
           break;
           
         case 2: // Found Location
@@ -554,7 +552,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
         onChange={(e) => updateField('description', e.target.value)}
         error={errors.description}
         rows={3}
-        required
       />
       
       {/* Photo upload */}
