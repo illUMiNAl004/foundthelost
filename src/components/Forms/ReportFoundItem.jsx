@@ -12,7 +12,7 @@ import L from 'leaflet';
 import supabase from '../../utils/supabaseClient';
 import { useAuth } from '../../hooks/useAuth';
 import { useToast } from '../Common/Toast';
-import { CATEGORIES, ITEM_COLORS, CONDITIONS, CAMPUS_BUILDINGS, UMASS_CENTER, sanitizeInput } from '../../utils/constants';
+import { CATEGORIES, ITEM_COLORS, CAMPUS_BUILDINGS, UMASS_CENTER, sanitizeInput } from '../../utils/constants';
 import { findMatchesForFoundItem, createMatchRecords } from '../../utils/matchingService';
 import { FormInput, FormTextarea, FormSelect } from './FormStep';
 import { Card, CardContent } from '../Common/Card';
@@ -82,7 +82,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
     found_building_name: '',
     found_location_description: '',
     found_date: new Date().toISOString().split('T')[0],
-    found_time: '',
     
     // Current location (only for "left it" path)
     current_location_lat: null,
@@ -93,7 +92,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
     // Details
     color: '',
     brand: '',
-    condition: '',
     
     // Contact preferences (only for "with me" path)
     contact_method: 'app', // 'app', 'email', 'both'
@@ -299,14 +297,12 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
           ? sanitizeInput(formData.found_location_description?.trim() || '')
           : sanitizeInput(formData.current_location_description?.trim() || ''),
         
-        // Date/time found
+        // Date found
         date_found: formData.found_date,
-        time_found: formData.found_time || null,
         
         // Details
         color: formData.color || null,
         brand: sanitizeInput(formData.brand?.trim() || ''),
-        condition: formData.condition || null,
         photo_url: photoUrl,
         
         // Status
@@ -660,24 +656,15 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
         rows={2}
       />
       
-      <div className="grid grid-cols-2 gap-4">
-        <FormInput
-          label="Date Found"
-          type="date"
-          value={formData.found_date}
-          onChange={(e) => updateField('found_date', e.target.value)}
-          error={errors.found_date}
-          max={new Date().toISOString().split('T')[0]}
-          required
-        />
-        
-        <FormInput
-          label="Time Found"
-          type="time"
-          value={formData.found_time}
-          onChange={(e) => updateField('found_time', e.target.value)}
-        />
-      </div>
+      <FormInput
+        label="Date Found"
+        type="date"
+        value={formData.found_date}
+        onChange={(e) => updateField('found_date', e.target.value)}
+        error={errors.found_date}
+        max={new Date().toISOString().split('T')[0]}
+        required
+      />
       
       {isSelectingLocation === 'found' && (
         <LocationPickerModal
@@ -812,17 +799,6 @@ const ReportFoundItem = ({ onClose, initialLocation = null }) => {
           onChange={(e) => updateField('brand', e.target.value)}
         />
       </div>
-      
-      <FormSelect
-        label="Condition"
-        value={formData.condition}
-        onChange={(e) => updateField('condition', e.target.value)}
-      >
-        <option value="">Select condition</option>
-        {CONDITIONS.map(cond => (
-          <option key={cond.value} value={cond.value}>{cond.label}</option>
-        ))}
-      </FormSelect>
       
       {/* Contact preferences for "with me" path */}
       {selectedPath === 'withMe' && (
