@@ -83,7 +83,7 @@ const Login = () => {
     }
   };
 
-  // Handle password reset
+  // Handle password reset s
   const handleResetPassword = async (e) => {
     e.preventDefault();
 
