@@ -1,7 +1,7 @@
 /**
  * Login Component
  * Authentication form with password recovery option
- * Features glassmorphism design with dark mode default
+ * Features glassmorphism design with dark mode default --
  */
 
 import { useState } from 'react';
