@@ -135,3 +135,19 @@
 
 .no-scrollbar::-webkit-scrollbar { display: none; }
 .no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* geolocate control — glassy, rounded, sits above the bottom sheet */
+.maplibregl-ctrl-bottom-right { bottom: 280px; right: 12px; z-index: 15; }
+.maplibregl-ctrl-group {
+  border-radius: 9999px !important;
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.8) !important;
+  background: rgba(248, 244, 233, 0.92) !important;
+  backdrop-filter: blur(16px);
+  box-shadow: 0 8px 28px -10px rgba(28, 27, 23, 0.3) !important;
+}
+.dark .maplibregl-ctrl-group {
+  background: rgba(15, 23, 42, 0.85) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+.maplibregl-ctrl-group button { width: 42px !important; height: 42px !important; }

@@ -68,7 +68,9 @@ export default function App() {
     if (!user) setAllItems([])
   }, [user, refresh])
 
-  /* ---------- phases ---------- */
+  /* ---------- phases ----------
+     Flow: loader → globe always flies to campus → then, if logged out, the auth
+     gate fades in over the campus view; if logged in, the top bar appears. */
   const proceedToMap = useCallback(() => {
     if (startedRef.current) return
     startedRef.current = true
@@ -78,14 +80,8 @@ export default function App() {
 
   const handleLoaderDone = () => {
     if (phase !== 'loader') return
-    if (user) proceedToMap()
-    else setPhase('auth')
+    proceedToMap()
   }
-
-  // session restored while gate is showing → continue in
-  useEffect(() => {
-    if (phase === 'auth' && !loading && user) proceedToMap()
-  }, [phase, loading, user, proceedToMap])
 
   /* ---------- interactions ---------- */
   const items = useMemo(() => {
@@ -106,6 +102,10 @@ export default function App() {
     setSelected(null)
     mapApi.current?.resetView()
   }
+  const handleGoToPlace = (place) => {
+    setSelected(null)
+    mapApi.current?.flyTo(place.coords, 16.4)
+  }
   const handleReportSubmit = async (draft) => {
     try {
       const { instantMatch } = await createItem(user, draft)
@@ -124,7 +124,7 @@ export default function App() {
     if (match) setTimeout(() => handleSelect(match), 350)
   }
 
-  const ready = phase === 'ready'
+  const ready = phase === 'ready' && !!user
   const showGate = phase !== 'loader' && !loading && !user
 
   return (
@@ -155,6 +155,7 @@ export default function App() {
             unread={unread}
             onOpenChat={() => setPanel('chat')}
             onOpenBoard={() => setPanel('board')}
+            onGoToPlace={handleGoToPlace}
           />
           <FilterChips filter={filter} setFilter={setFilter} />
         </div>

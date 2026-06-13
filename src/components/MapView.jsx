@@ -157,10 +157,16 @@ export default function MapView({ items, selectedId, onSelect, dark, mapApi, onI
       }
     }
 
-    // mock "you are here" dot near the campus pond
-    const dot = document.createElement('div')
-    dot.className = 'user-dot'
-    new maplibregl.Marker({ element: dot }).setLngLat([-72.5271, 42.3888]).addTo(map)
+    // REAL geolocation — tap the control to show your actual position (with an
+    // accuracy ring) instead of a hardcoded campus dot.
+    const geolocate = new maplibregl.GeolocateControl({
+      positionOptions: { enableHighAccuracy: true },
+      trackUserLocation: true,
+      showUserHeading: true,
+      fitBoundsOptions: { maxZoom: 17 },
+    })
+    map.addControl(geolocate, 'bottom-right')
+    if (mapApi) mapApi.current = { ...(mapApi.current || {}), locate: () => geolocate.trigger() }
 
     return () => map.remove()
     // eslint-disable-next-line react-hooks/exhaustive-deps

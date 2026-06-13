@@ -2,10 +2,21 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { resetDemo } from '../lib/api.js'
+import { searchPlaces } from '../data/campusPlaces.js'
 
-export default function TopBar({ query, setQuery, dark, setDark, karma, unread, onOpenChat, onOpenBoard }) {
+export default function TopBar({ query, setQuery, dark, setDark, karma, unread, onOpenChat, onOpenBoard, onGoToPlace }) {
   const { user, signOut, isLive } = useAuth()
   const [menu, setMenu] = useState(false)
+  const [focused, setFocused] = useState(false)
+
+  const places = searchPlaces(query)
+  const showPlaces = focused && places.length > 0
+
+  const pickPlace = (p) => {
+    onGoToPlace?.(p)
+    setQuery('')
+    setFocused(false)
+  }
 
   const iconBtn =
     'relative grid h-9 w-9 flex-none place-items-center rounded-full text-[15px] transition hover:bg-ink/5 dark:hover:bg-white/10'
@@ -32,9 +43,37 @@ export default function TopBar({ query, setQuery, dark, setDark, karma, unread, 
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder="Search your items…"
+          onFocus={() => setFocused(true)}
+          onBlur={() => setTimeout(() => setFocused(false), 150)}
+          placeholder="Search items or a place…"
           className="w-full rounded-full border border-transparent bg-ink/[0.05] py-2 pl-9 pr-4 text-sm outline-none transition placeholder:text-slate-400 focus:border-lime focus:bg-white/80 dark:bg-white/5 dark:focus:bg-slate-800/70"
         />
+
+        {/* place suggestions — fly the map to a campus location */}
+        <AnimatePresence>
+          {showPlaces && (
+            <motion.div
+              initial={{ opacity: 0, y: -6, scale: 0.98 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -6, scale: 0.98 }}
+              transition={{ type: 'spring', stiffness: 420, damping: 30 }}
+              className="glass-shadow absolute left-0 right-0 top-[120%] z-50 overflow-hidden rounded-2xl border border-white/80 bg-[#F8F4E9]/[0.97] p-1.5 backdrop-blur-2xl dark:border-white/10 dark:bg-slate-900/[0.97]"
+            >
+              <div className="mono-label px-2.5 py-1 !text-[9px]">:: go to a place</div>
+              {places.map((p) => (
+                <button
+                  key={p.name}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => pickPlace(p)}
+                  className="flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left text-[14px] transition hover:bg-ink/5 dark:hover:bg-white/10"
+                >
+                  <span className="text-base">{p.emoji}</span>
+                  <span className="font-medium">{p.name}</span>
+                </button>
+              ))}
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* karma pill */}
