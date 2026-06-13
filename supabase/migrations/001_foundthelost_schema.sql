@@ -1,7 +1,8 @@
 -- ============================================================================
 -- foundthelost — hardened schema v2 (June 2026)
--- Safe to re-run from scratch (drops + recreates). Uses NAMED dollar-quote tags
--- ($ftl$) so the $ inside the email regex can't confuse the SQL editor's parser.
+-- Safe to re-run from scratch (drops + recreates). Functions use the standard
+-- $$ tag; the email domain is checked with LIKE (no regex, so no stray $ that
+-- would confuse the SQL editor's dollar-quote parser).
 -- ============================================================================
 
 -- clean slate (no-op on a fresh project) ------------------------------------
@@ -26,15 +27,15 @@ create table public.profiles (
 
 -- auto-create profile on signup + enforce @umass.edu at the DB
 create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $ftl$
+returns trigger language plpgsql security definer set search_path = public as $$
 begin
-  if new.email !~* '^[A-Za-z0-9._%+-]+@(students\.)?umass\.edu$' then
+  if not (lower(new.email) like '%@umass.edu' or lower(new.email) like '%@students.umass.edu') then
     raise exception 'Only @umass.edu accounts are allowed';
   end if;
   insert into public.profiles (id, name)
   values (new.id, coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)));
   return new;
-end $ftl$;
+end $$;
 
 create trigger on_auth_user_created
   after insert on auth.users
@@ -98,11 +99,11 @@ create table public.messages (
 create index messages_conversation_idx on public.messages (conversation_id, created_at);
 
 create or replace function public.touch_conversation()
-returns trigger language plpgsql as $ftl$
+returns trigger language plpgsql as $$
 begin
   update public.conversations set last_message_at = new.created_at where id = new.conversation_id;
   return new;
-end $ftl$;
+end $$;
 
 create trigger on_message_sent
   after insert on public.messages
@@ -110,15 +111,15 @@ create trigger on_message_sent
 
 -- matching (server-side; clients can't forge matches) ------------------------
 create or replace function public.km_between(lat1 double precision, lng1 double precision, lat2 double precision, lng2 double precision)
-returns double precision language sql immutable as $ftl$
+returns double precision language sql immutable as $$
   select 6371 * 2 * asin(sqrt(
     power(sin(radians(lat2 - lat1) / 2), 2) +
     cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lng2 - lng1) / 2), 2)
   ));
-$ftl$;
+$$;
 
 create or replace function public.match_item(p_item_id uuid)
-returns int language plpgsql security definer set search_path = public as $ftl$
+returns int language plpgsql security definer set search_path = public as $$
 declare
   v_item public.items;
   v_count int := 0;
@@ -171,7 +172,7 @@ begin
     end if;
   end loop;
   return v_count;
-end $ftl$;
+end $$;
 
 revoke all on function public.match_item(uuid) from public, anon;
 grant execute on function public.match_item(uuid) to authenticated;
