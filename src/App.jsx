@@ -114,6 +114,7 @@ export default function App() {
       pendingMatchRef.current = instantMatch || null
     } catch (e) {
       console.error('createItem failed:', e)
+      alert(`Could not save your report:\n${e.message || e}`)
     }
   }
 

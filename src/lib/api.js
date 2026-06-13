@@ -6,6 +6,11 @@ import { findMatches } from './matching.js'
 
 const DB_KEY = 'ftl-demo-db-v3'
 
+// A demo user (from "explore the demo") has no Supabase session, so even on the
+// live site their data must use the local demo store — otherwise RLS silently
+// blocks every read/write because auth.uid() is null.
+const useDemo = (user) => !isLive || !!(user && user.demo)
+
 const CATEGORY_EMOJI = {
   electronics: '🎧', wallets: '👛', keys: '🔑', bottles: '🧴', clothing: '🧥', other: '🧸',
 }
@@ -96,7 +101,7 @@ function rowToUiItem(row) {
 }
 
 export async function getMyItems(user) {
-  if (!isLive) {
+  if (useDemo(user)) {
     const db = loadDemo()
     const mine = db.items
     const myLost = mine.filter((it) => it.kind === 'lost')
@@ -141,7 +146,7 @@ export async function getMyItems(user) {
 }
 
 export async function createItem(user, draft) {
-  if (!isLive) {
+  if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
     const item = {
@@ -173,6 +178,9 @@ export async function createItem(user, draft) {
   }
 
   // ---- live ----
+  // use the detected place's coords; otherwise scatter around campus so pins don't stack
+  const jitter = () => (Math.random() - 0.5) * 0.006
+  const coords = draft.coords || [CAMPUS_CENTER[0] + jitter(), CAMPUS_CENTER[1] + jitter()]
   const { data, error } = await supabase
     .from('items')
     .insert({
@@ -183,8 +191,8 @@ export async function createItem(user, draft) {
       description: draft.description || '',
       status: draft.status,
       building: draft.building || null,
-      lng: (draft.coords || CAMPUS_CENTER)[0],
-      lat: (draft.coords || CAMPUS_CENTER)[1],
+      lng: coords[0],
+      lat: coords[1],
       sensitive: !!draft.sensitive,
     })
     .select()
@@ -203,7 +211,7 @@ export async function createItem(user, draft) {
 /* ------------------------------------------------------------------ */
 
 export async function getConversations(user) {
-  if (!isLive) return loadDemo().conversations
+  if (useDemo(user)) return loadDemo().conversations
   const { data, error } = await supabase
     .from('conversations')
     .select('id, item_label, participant_a, participant_b, profiles_a:profiles!conversations_participant_a_fkey(name), profiles_b:profiles!conversations_participant_b_fkey(name), messages(id, sender_id, content, created_at)')
@@ -229,7 +237,7 @@ export async function getConversations(user) {
 
 export async function sendMessage(user, conversationId, text) {
   const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
-  if (!isLive) {
+  if (useDemo(user)) {
     const db = loadDemo()
     const conv = db.conversations.find((c) => c.id === conversationId)
     if (conv) {
@@ -258,13 +266,13 @@ export function markConversationRead(conversationId) {
 /* ------------------------------------------------------------------ */
 
 export async function getKarma(user) {
-  if (!isLive) return loadDemo().karma
+  if (useDemo(user)) return loadDemo().karma
   const { data } = await supabase.from('profiles').select('karma').eq('id', user.id).single()
   return data?.karma ?? 0
 }
 
 export async function getLeaderboard(user) {
-  if (!isLive) {
+  if (useDemo(user)) {
     const db = loadDemo()
     const you = { name: 'You', karma: db.karma, returns: 4, you: true }
     const rows = [...db.leaderboard, you].sort((a, b) => b.karma - a.karma)

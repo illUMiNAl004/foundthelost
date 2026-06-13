@@ -48,8 +48,7 @@ function findTime(text) {
 function findPlace(text) {
   const t = text.toLowerCase()
   for (const p of CAMPUS_PLACES) {
-    if (t.includes(p.name.toLowerCase())) return p.name
-    if (p.aliases.some((a) => t.includes(a))) return p.name
+    if (t.includes(p.name.toLowerCase()) || p.aliases.some((a) => t.includes(a))) return p
   }
   return null
 }
@@ -70,7 +69,8 @@ export function parseDescription(text = '') {
   const item = ITEMS.find((i) => i.re.test(t)) || null
   const color = COLORS.find((c) => new RegExp(`\\b${c}\\b`).test(t)) || null
   const quals = QUALIFIERS.filter((q) => q.re.test(t)).map((q) => q.label)
-  const place = findPlace(text)
+  const placeObj = findPlace(text)
+  const place = placeObj?.name || null
   const time = findTime(text)
 
   if (item) push(item.label)
@@ -86,5 +86,5 @@ export function parseDescription(text = '') {
   quals.forEach((q) => titleBits.push(q))
   const title = titleBits.length ? titleBits.join(' ') : (text.trim().slice(0, 42) || 'Lost item')
 
-  return { chips, title, category: item?.category || 'other', color, place, time }
+  return { chips, title, category: item?.category || 'other', color, place, coords: placeObj?.coords || null, time }
 }

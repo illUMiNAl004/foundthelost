@@ -206,15 +206,23 @@ create policy "own items update" on public.items
 create policy "own items delete" on public.items
   for delete using (auth.uid() = user_id);
 
-create policy "matched items readable" on public.items
-  for select using (
-    exists (
-      select 1 from public.matches m
-      join public.items mine on mine.user_id = auth.uid()
-      where (m.lost_item_id = mine.id and m.found_item_id = items.id)
-         or (m.found_item_id = mine.id and m.lost_item_id = items.id)
-    )
+-- A found item is readable if it's matched to one of YOUR items. This lookup MUST
+-- live in a SECURITY DEFINER function — querying public.items directly inside an
+-- items policy causes "infinite recursion detected in policy for relation items".
+create or replace function public.item_visible_to_me(p_item_id uuid)
+returns boolean language sql security definer stable set search_path = public as $$
+  select exists (
+    select 1 from public.matches m
+    join public.items mine on mine.user_id = auth.uid()
+    where (m.lost_item_id = mine.id and m.found_item_id = p_item_id)
+       or (m.found_item_id = mine.id and m.lost_item_id = p_item_id)
   );
+$$;
+revoke all on function public.item_visible_to_me(uuid) from public, anon;
+grant execute on function public.item_visible_to_me(uuid) to authenticated;
+
+create policy "matched items readable" on public.items
+  for select using (public.item_visible_to_me(id));
 
 create policy "matches visible to parties" on public.matches
   for select using (

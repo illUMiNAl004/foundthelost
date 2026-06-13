@@ -53,9 +53,12 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [lostText, setLostText] = useState('')
+  const [foundMode, setFoundMode] = useState(null) // null | 'photo' | 'text'
+  const [foundText, setFoundText] = useState('')
 
   const isFound = mode === 'found'
   const lost = useMemo(() => parseDescription(lostText), [lostText])
+  const found = useMemo(() => parseDescription(foundText), [foundText])
 
   const startScan = () => {
     setScanning(true)
@@ -113,7 +116,66 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
               exit={{ opacity: 0, x: -36 }}
               transition={SPRING}
             >
-              {isFound ? (
+              {isFound && !foundMode ? (
+                <>
+                  <h2 className="font-display text-2xl font-bold tracking-tight">You found something? 🙌</h2>
+                  <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
+                    Snap a photo and AI fills in the details, or just type it out.
+                  </p>
+                  <div className="mt-5 grid grid-cols-2 gap-3">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => setFoundMode('photo')}
+                      className="flex flex-col items-center gap-2 rounded-2xl border-2 border-ink/15 bg-white/70 py-7 backdrop-blur transition hover:border-lime dark:border-white/10 dark:bg-slate-800/60"
+                    >
+                      <span className="text-3xl">📸</span>
+                      <span className="font-mono text-[12px] font-bold uppercase tracking-[0.06em]">Snap a photo</span>
+                      <span className="text-[11px] text-slate-400">AI fills it in</span>
+                    </motion.button>
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.96 }}
+                      onClick={() => setFoundMode('text')}
+                      className="flex flex-col items-center gap-2 rounded-2xl border-2 border-ink/15 bg-white/70 py-7 backdrop-blur transition hover:border-lime dark:border-white/10 dark:bg-slate-800/60"
+                    >
+                      <span className="text-3xl">⌨️</span>
+                      <span className="font-mono text-[12px] font-bold uppercase tracking-[0.06em]">Type it out</span>
+                      <span className="text-[11px] text-slate-400">describe it</span>
+                    </motion.button>
+                  </div>
+                </>
+              ) : isFound && foundMode === 'text' ? (
+                <>
+                  <h2 className="font-display text-2xl font-bold tracking-tight">What did you find?</h2>
+                  <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
+                    Describe it like you'd text a friend. We'll structure it.
+                  </p>
+                  <textarea
+                    value={foundText}
+                    onChange={(e) => setFoundText(e.target.value)}
+                    placeholder='e.g. "white AirPods Pro on a table at Berkshire around 2pm"'
+                    rows={3}
+                    className="mt-4 w-full resize-none rounded-2xl border border-slate-200/80 bg-white/70 p-4 text-[15px] outline-none backdrop-blur transition placeholder:text-slate-400 focus:border-lime dark:border-white/10 dark:bg-slate-800/60"
+                  />
+                  <div className="mt-3 flex min-h-[34px] flex-wrap gap-1.5">
+                    {found.chips.map((chip, i) => (
+                      <motion.span
+                        key={chip}
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ ...SPRING, delay: i * 0.05 }}
+                        className="rounded-full border border-ink/20 bg-lime/60 px-2.5 py-1 font-mono text-[11px] font-bold text-ink dark:border-lime/30 dark:bg-lime/15 dark:text-lime"
+                      >
+                        {chip}
+                      </motion.span>
+                    ))}
+                    {found.chips.length === 0 && (
+                      <span className="text-[12px] text-slate-400">✦ keywords appear as you type…</span>
+                    )}
+                  </div>
+                </>
+              ) : isFound ? (
                 <>
                   <h2 className="font-display text-2xl font-bold tracking-tight">Snap it. We'll do the rest.</h2>
                   <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
@@ -206,14 +268,21 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                 </>
               )}
 
-              <motion.button
-                whileTap={{ scale: 0.97 }}
-                disabled={isFound ? !scanned : lostText.length < 8}
-                onClick={() => setStep(1)}
-                className="btn-lime mt-5 w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition disabled:opacity-35"
-              >
-                Looks right →
-              </motion.button>
+              {/* hidden on the found chooser screen — the cards advance there */}
+              {!(isFound && !foundMode) && (
+                <motion.button
+                  whileTap={{ scale: 0.97 }}
+                  disabled={
+                    isFound
+                      ? foundMode === 'photo' ? !scanned : foundText.trim().length < 8
+                      : lostText.trim().length < 8
+                  }
+                  onClick={() => setStep(1)}
+                  className="btn-lime mt-5 w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition disabled:opacity-35"
+                >
+                  Looks right →
+                </motion.button>
+              )}
             </motion.div>
           )}
 
@@ -245,7 +314,9 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   📍
                 </motion.div>
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/85 px-3.5 py-1.5 text-[13px] font-semibold shadow backdrop-blur dark:bg-slate-900/85">
-                  {isFound ? 'Berkshire Dining Commons' : lost.place || 'On campus'}
+                  {isFound
+                    ? foundMode === 'text' ? found.place || 'On campus' : 'Berkshire Dining Commons'
+                    : lost.place || 'On campus'}
                 </div>
               </div>
 
@@ -267,6 +338,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         description: lostText.trim(),
                         status: 'still searching',
                         building: lost.place || 'On campus',
+                        coords: lost.coords,
                       })
                     }
                     setStep(isFound ? 2 : totalSteps)
@@ -301,13 +373,15 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     whileHover={{ scale: 1.015 }}
                     whileTap={{ scale: 0.975 }}
                     onClick={() => {
+                      const fromText = foundMode === 'text'
                       onSubmit?.({
                         kind: 'found',
-                        name: 'AirPods Pro (2nd gen)',
-                        category: 'electronics',
-                        description: 'White charging case, small scratch near the hinge. (Snap & Fill demo data)',
+                        name: fromText ? found.title : 'AirPods Pro (2nd gen)',
+                        category: fromText ? found.category : 'electronics',
+                        description: fromText ? foundText.trim() : 'White charging case, small scratch near the hinge.',
                         status: opt.status,
-                        building: 'Berkshire Dining Commons',
+                        building: fromText ? (found.place || 'On campus') : 'Berkshire Dining Commons',
+                        coords: fromText ? found.coords : null,
                       })
                       setStep(3)
                     }}
