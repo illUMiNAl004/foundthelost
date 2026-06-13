@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
+import { parseDescription } from '../lib/extract.js'
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
 
@@ -11,23 +12,11 @@ const AI_FIELDS = [
   { label: 'Location detected', value: 'Berkshire Dining Commons' },
 ]
 
-const LOST_CHIPS = ['Hydro Flask', 'navy blue', 'mountain sticker', 'bottle', 'ILC area', '~1pm today']
-
 const HANDOFF_OPTIONS = [
   { emoji: '🎒', title: 'Keep it with me', desc: 'The owner reaches you through in-app chat.', status: 'with you' },
   { emoji: '🏛️', title: 'Drop-off desk', desc: 'Leave it at a registered reception near you.', status: 'dropped off' },
   { emoji: '📍', title: 'Left it in place', desc: 'You logged the spot — the owner goes to it.', status: 'left in place' },
 ]
-
-function guessCategory(text) {
-  const t = text.toLowerCase()
-  if (/airpod|phone|laptop|ipad|charger|calculator|headphone|earbud/.test(t)) return 'electronics'
-  if (/wallet|card|ucard|id\b|passport/.test(t)) return 'wallets'
-  if (/key|fob|lanyard/.test(t)) return 'keys'
-  if (/flask|bottle|tumbler|stanley/.test(t)) return 'bottles'
-  if (/jacket|hoodie|beanie|hat|glove|scarf|coat/.test(t)) return 'clothing'
-  return 'other'
-}
 
 function Confetti() {
   const pieces = useMemo(
@@ -64,21 +53,14 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [scanning, setScanning] = useState(false)
   const [scanned, setScanned] = useState(false)
   const [lostText, setLostText] = useState('')
-  const [parsed, setParsed] = useState(false)
 
   const isFound = mode === 'found'
+  const lost = useMemo(() => parseDescription(lostText), [lostText])
 
   const startScan = () => {
     setScanning(true)
     setTimeout(() => { setScanning(false); setScanned(true) }, 1500)
   }
-
-  useEffect(() => {
-    if (!isFound && lostText.length > 18 && !parsed) {
-      const t = setTimeout(() => setParsed(true), 700)
-      return () => clearTimeout(t)
-    }
-  }, [lostText, parsed, isFound])
 
   const totalSteps = isFound ? 3 : 2
 
@@ -206,20 +188,19 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     className="mt-4 w-full resize-none rounded-2xl border border-slate-200/80 bg-white/70 p-4 text-[15px] outline-none backdrop-blur transition placeholder:text-slate-400 focus:border-lime dark:border-white/10 dark:bg-slate-800/60"
                   />
                   <div className="mt-3 flex min-h-[34px] flex-wrap gap-1.5">
-                    {(parsed || lostText.length > 18) &&
-                      LOST_CHIPS.map((chip, i) => (
-                        <motion.span
-                          key={chip}
-                          initial={{ opacity: 0, scale: 0.7 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          transition={{ ...SPRING, delay: i * 0.07 }}
-                          className="rounded-full border border-ink/20 bg-lime/60 px-2.5 py-1 font-mono text-[11px] font-bold text-ink dark:border-lime/30 dark:bg-lime/15 dark:text-lime"
-                        >
-                          {chip}
-                        </motion.span>
-                      ))}
-                    {!parsed && lostText.length <= 18 && (
-                      <span className="text-[12px] text-slate-400">✦ AI keywords appear as you type…</span>
+                    {lost.chips.map((chip, i) => (
+                      <motion.span
+                        key={chip}
+                        initial={{ opacity: 0, scale: 0.7 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        transition={{ ...SPRING, delay: i * 0.05 }}
+                        className="rounded-full border border-ink/20 bg-lime/60 px-2.5 py-1 font-mono text-[11px] font-bold text-ink dark:border-lime/30 dark:bg-lime/15 dark:text-lime"
+                      >
+                        {chip}
+                      </motion.span>
+                    ))}
+                    {lost.chips.length === 0 && (
+                      <span className="text-[12px] text-slate-400">✦ keywords appear as you type…</span>
                     )}
                   </div>
                 </>
@@ -264,7 +245,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   📍
                 </motion.div>
                 <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/85 px-3.5 py-1.5 text-[13px] font-semibold shadow backdrop-blur dark:bg-slate-900/85">
-                  {isFound ? 'Berkshire Dining Commons' : 'ILC — west entrance'}
+                  {isFound ? 'Berkshire Dining Commons' : lost.place || 'On campus'}
                 </div>
               </div>
 
@@ -279,14 +260,13 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (!isFound) {
-                      const name = lostText.trim().slice(0, 42) || 'Lost item'
                       onSubmit?.({
                         kind: 'lost',
-                        name: name[0].toUpperCase() + name.slice(1),
-                        category: guessCategory(lostText),
+                        name: lost.title,
+                        category: lost.category,
                         description: lostText.trim(),
                         status: 'still searching',
-                        building: 'ILC — west entrance',
+                        building: lost.place || 'On campus',
                       })
                     }
                     setStep(isFound ? 2 : totalSteps)
