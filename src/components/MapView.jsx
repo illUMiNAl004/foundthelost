@@ -7,21 +7,60 @@ const CAMPUS_VIEW = { center: CAMPUS_CENTER, zoom: 15.6, pitch: 48, bearing: -16
 
 // Lightweight colorful vector style (cartoony, readable labels, 3D buildings)
 const LIGHT_STYLE = 'https://tiles.openfreemap.org/styles/liberty'
-const DARK_STYLE = {
-  version: 8,
-  sources: {
-    carto: {
-      type: 'raster',
-      tiles: [
-        'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://b.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-        'https://c.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}@2x.png',
-      ],
-      tileSize: 256,
-      attribution: '© OpenStreetMap contributors © CARTO',
-    },
+
+// Dark mode keeps the SAME vector style (geometry, 3D buildings, labels) but
+// recolors every layer into a warm-navy night palette — same vibe, with colors.
+const SKY = {
+  light: {
+    'sky-color': '#a5c8e4', 'horizon-color': '#e8e2d0', 'fog-color': '#f5f1e6',
+    'sky-horizon-blend': 0.6,
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 0.4, 12, 0],
   },
-  layers: [{ id: 'carto-dark', type: 'raster', source: 'carto' }],
+  dark: {
+    'sky-color': '#0c1322', 'horizon-color': '#1c2740', 'fog-color': '#121624',
+    'sky-horizon-blend': 0.5,
+    'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 0.4, 12, 0],
+  },
+}
+
+let darkStyleCache = null
+async function getDarkStyle() {
+  if (darkStyleCache) return darkStyleCache
+  const res = await fetch(LIGHT_STYLE)
+  const s = await res.json()
+  for (const layer of s.layers) {
+    const id = (layer.id || '').toLowerCase()
+    if (layer.type === 'background') {
+      layer.paint = { ...layer.paint, 'background-color': '#0f1320' }
+    } else if (layer.type === 'fill') {
+      let c = '#1a1f2e'
+      if (id.includes('water')) c = '#10243d'
+      else if (/wood|forest|park|grass|green|scrub|wetland|cemetery|pitch/.test(id)) c = '#16291e'
+      else if (id.includes('building')) c = '#232838'
+      else if (/sand|beach/.test(id)) c = '#2a2417'
+      else if (/aeroway|runway|pedestrian|path/.test(id)) c = '#1d2230'
+      layer.paint = { ...layer.paint, 'fill-color': c, 'fill-outline-color': '#2d3346' }
+    } else if (layer.type === 'fill-extrusion') {
+      layer.paint = { ...layer.paint, 'fill-extrusion-color': '#2a3043', 'fill-extrusion-opacity': 0.92 }
+    } else if (layer.type === 'line') {
+      let c = '#2b3142'
+      if (/motorway|trunk|primary/.test(id)) c = '#4a5169'
+      else if (/secondary|tertiary/.test(id)) c = '#3a4159'
+      else if (id.includes('rail')) c = '#343a4d'
+      else if (id.includes('water')) c = '#10243d'
+      else if (id.includes('admin') || id.includes('boundary')) c = '#3a3550'
+      layer.paint = { ...layer.paint, 'line-color': c }
+    } else if (layer.type === 'symbol') {
+      layer.paint = {
+        ...layer.paint,
+        'text-color': id.includes('water') ? '#6f8fb5' : '#c5cad9',
+        'text-halo-color': '#0c1018',
+        'text-halo-width': 1.4,
+      }
+    }
+  }
+  darkStyleCache = s
+  return s
 }
 
 // marching-ants sequence for the lost→found dashed path
@@ -44,6 +83,7 @@ export default function MapView({ items, selectedId, onSelect, dark, mapApi, onI
   const routeBitsRef = useRef({ markers: [], timer: null })
   const loadedRef = useRef(false)
   const pendingIntroRef = useRef(false)
+  const darkRef = useRef(dark)
 
   useEffect(() => {
     const map = new maplibregl.Map({
@@ -60,13 +100,7 @@ export default function MapView({ items, selectedId, onSelect, dark, mapApi, onI
     map.on('style.load', () => {
       try {
         map.setProjection({ type: 'globe' })
-        map.setSky({
-          'sky-color': '#a5c8e4',
-          'horizon-color': '#e8e2d0',
-          'fog-color': '#f5f1e6',
-          'sky-horizon-blend': 0.6,
-          'atmosphere-blend': ['interpolate', ['linear'], ['zoom'], 0, 1, 9, 0.4, 12, 0],
-        })
+        map.setSky(darkRef.current ? SKY.dark : SKY.light)
       } catch (e) {
         console.warn('globe unavailable:', e)
       }
@@ -172,11 +206,13 @@ export default function MapView({ items, selectedId, onSelect, dark, mapApi, onI
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // theme swap (style.load handler re-applies globe + sky)
+  // theme swap — same vector style, recolored dark (style.load re-applies globe + sky)
   useEffect(() => {
+    darkRef.current = dark
     const map = mapRef.current
     if (!map || !loadedRef.current) return
-    map.setStyle(dark ? DARK_STYLE : LIGHT_STYLE)
+    if (dark) getDarkStyle().then((s) => map.setStyle(s)).catch((e) => console.warn('dark style failed:', e))
+    else map.setStyle(LIGHT_STYLE)
   }, [dark])
 
   // sticker pins — animation lives on .spin-inner so maplibre's root transform survives
