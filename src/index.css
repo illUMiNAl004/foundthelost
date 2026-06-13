@@ -1,322 +1,137 @@
-/**
- * index.css
- * Global styles and Tailwind imports
- */
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
-/* Custom base styles */
 @layer base {
   html, body, #root {
-    @apply h-full;
+    height: 100%;
+    overscroll-behavior: none;
   }
-
-  html {
-    @apply scroll-smooth;
-  }
-
   body {
-    @apply bg-slate-950 text-slate-100 antialiased;
-    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
-  }
-
-  /* Hide scrollbar but allow scrolling */
-  .scrollbar-hide {
-    -ms-overflow-style: none;
-    scrollbar-width: none;
-  }
-
-  .scrollbar-hide::-webkit-scrollbar {
-    display: none;
-  }
-
-  /* Custom scrollbar for content areas */
-  ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  ::-webkit-scrollbar-track {
-    @apply bg-slate-900;
-  }
-
-  ::-webkit-scrollbar-thumb {
-    @apply bg-slate-700 rounded-full;
-  }
-
-  ::-webkit-scrollbar-thumb:hover {
-    @apply bg-slate-600;
-  }
-
-  /* Safe area for mobile devices */
-  .safe-area-bottom {
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-
-  .safe-area-top {
-    padding-top: env(safe-area-inset-top);
+    @apply bg-cream font-sans text-ink antialiased dark:bg-slate-950 dark:text-slate-100;
   }
 }
 
-/* Custom component styles */
 @layer components {
-  /* Glassmorphism card */
-  .glass-card {
-    @apply bg-slate-800/50 backdrop-blur-xl border border-slate-700/50 rounded-xl;
+  .glass {
+    @apply bg-[#F8F4E9]/90 dark:bg-slate-900/75 backdrop-blur-2xl backdrop-saturate-150
+           border border-white/80 dark:border-white/10;
   }
-
-  /* Input styles */
-  .input-base {
-    @apply w-full px-4 py-2.5 bg-slate-800/50 border border-slate-700 rounded-lg text-white placeholder-slate-500;
-    @apply focus:outline-none focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-500/50;
-    @apply transition-all duration-200;
+  .glass-shadow {
+    box-shadow: 0 1px 2px rgba(28, 27, 23, 0.06), 0 14px 44px -14px rgba(28, 27, 23, 0.3);
   }
-
-  /* Button base */
-  .btn-base {
-    @apply inline-flex items-center justify-center font-semibold rounded-lg;
-    @apply transition-all duration-200 transform;
-    @apply focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-slate-900;
-    @apply disabled:opacity-50 disabled:cursor-not-allowed disabled:transform-none;
+  .btn-lime {
+    @apply bg-lime text-ink shadow-lg shadow-lime/40;
+  }
+  .btn-coral {
+    @apply bg-coral text-white shadow-lg shadow-coral/40;
+  }
+  .mono-label {
+    @apply font-mono text-[10.5px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400;
   }
 }
 
-/* Custom utility styles */
-@layer utilities {
-  /* Text gradient */
-  .text-gradient {
-    @apply bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-blue-400;
-  }
-
-  /* Pulse animation for new items */
-  .pulse-glow {
-    animation: pulse-glow 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-glow {
-    0%, 100% {
-      box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.4);
-    }
-    50% {
-      box-shadow: 0 0 0 10px rgba(16, 185, 129, 0);
-    }
-  }
-
-  /* Slide up animation */
-  .animate-slide-up {
-    animation: slide-up 0.3s ease-out;
-  }
-
-  @keyframes slide-up {
-    from {
-      transform: translateY(100%);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  /* Slide down animation */
-  .animate-slide-down {
-    animation: slide-down 0.3s ease-out;
-  }
-
-  @keyframes slide-down {
-    from {
-      transform: translateY(-20px);
-      opacity: 0;
-    }
-    to {
-      transform: translateY(0);
-      opacity: 1;
-    }
-  }
-
-  /* Fade in animation */
-  .animate-fade-in {
-    animation: fade-in 0.2s ease-out;
-  }
-
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Scale in animation */
-  .animate-scale-in {
-    animation: scale-in 0.2s ease-out;
-  }
-
-  @keyframes scale-in {
-    from {
-      transform: scale(0.95);
-      opacity: 0;
-    }
-    to {
-      transform: scale(1);
-      opacity: 1;
-    }
-  }
-
-  /* Spin animation */
-  .animate-spin-slow {
-    animation: spin 2s linear infinite;
-  }
-
-  /* Bounce animation */
-  .animate-bounce-subtle {
-    animation: bounce-subtle 1s ease-in-out infinite;
-  }
-
-  @keyframes bounce-subtle {
-    0%, 100% {
-      transform: translateY(0);
-    }
-    50% {
-      transform: translateY(-5px);
-    }
-  }
+/* ---------- sticker pins (Japan-trip style) ----------
+   NOTE: maplibre positions the marker element itself via inline transform,
+   so all animation/hover transforms live on .spin-inner, never the root. */
+.spin-wrap { cursor: pointer; }
+.spin-inner {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: pin-drop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  filter: drop-shadow(0 8px 14px rgba(20, 20, 10, 0.35));
+  transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transform-origin: bottom center;
+}
+.spin-wrap:hover .spin-inner { transform: scale(1.15) translateY(-3px); }
+.spin-inner.selected { transform: scale(1.2) translateY(-3px); }
+.spin {
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+  background: var(--pin, #d9f154);
+  border: 2.5px solid rgba(255, 255, 255, 0.95);
+}
+.spin-inner.selected .spin { border-color: #1c1b17; }
+.spin-stick {
+  width: 4px;
+  height: 11px;
+  border-radius: 0 0 4px 4px;
+  background: rgba(255, 255, 255, 0.95);
+  margin-top: -1px;
+}
+.spin-ring {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  width: 54px;
+  height: 54px;
+  margin-left: -27px;
+  border-radius: 18px;
+  border: 2.5px solid rgba(217, 241, 84, 0.9);
+  animation: pin-pulse 2.2s ease-out infinite;
+  pointer-events: none;
 }
 
-/* Leaflet map customizations */
-.leaflet-container {
-  @apply bg-slate-900;
-  font-family: inherit;
+/* ghost "lost here" pill (same inner-wrapper rule as pins) */
+.lost-ghost {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  animation: pin-drop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  filter: drop-shadow(0 8px 14px rgba(20, 20, 10, 0.35));
+}
+.lost-ghost .bubble {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: white;
+  background: #f0604d;
+  border: 2px solid rgba(255, 255, 255, 0.95);
+  border-radius: 12px;
+  padding: 7px 12px;
+  white-space: nowrap;
+}
+.lost-ghost .spin-stick { background: rgba(255, 255, 255, 0.95); }
+
+.user-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 9999px;
+  background: #3b82f6;
+  border: 3px solid white;
+  box-shadow: 0 0 0 7px rgba(59, 130, 246, 0.25), 0 2px 8px rgba(15, 23, 42, 0.35);
 }
 
-.leaflet-popup-content-wrapper {
-  @apply bg-slate-800 text-white border border-slate-700 rounded-xl shadow-xl;
+@keyframes pin-drop {
+  from { opacity: 0; transform: translateY(-26px) scale(0.4); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes pin-pulse {
+  0%   { transform: scale(0.8); opacity: 0.95; }
+  70%  { transform: scale(1.35); opacity: 0; }
+  100% { transform: scale(1.35); opacity: 0; }
 }
 
-.leaflet-popup-content {
-  @apply m-0;
+/* ---------- maplibre chrome ---------- */
+.maplibregl-ctrl-attrib {
+  font-size: 10px !important;
+  background: rgba(245, 241, 230, 0.6) !important;
+  backdrop-filter: blur(8px);
+  border-radius: 8px 0 0 0;
 }
-
-.leaflet-popup-tip {
-  @apply bg-slate-800 border-l border-b border-slate-700;
+.dark .maplibregl-ctrl-attrib {
+  background: rgba(15, 23, 42, 0.55) !important;
+  color: #94a3b8;
 }
+.dark .maplibregl-ctrl-attrib a { color: #94a3b8; }
 
-.leaflet-control-zoom {
-  @apply border-none;
-}
-
-.leaflet-control-zoom a {
-  @apply bg-slate-800 border border-slate-700 text-white;
-}
-
-.leaflet-control-zoom a:hover {
-  @apply bg-slate-700;
-}
-
-.leaflet-control-attribution {
-  @apply bg-slate-900/80 text-slate-500 text-xs;
-}
-
-/* Custom marker styles */
-.custom-marker {
-  @apply flex items-center justify-center;
-}
-
-.marker-pin {
-  @apply w-8 h-8 rounded-full flex items-center justify-center;
-  @apply shadow-lg;
-  transform: translate(-50%, -100%);
-}
-
-.marker-pin::after {
-  content: '';
-  @apply absolute -bottom-2 left-1/2 -translate-x-1/2;
-  @apply w-0 h-0;
-  border-left: 6px solid transparent;
-  border-right: 6px solid transparent;
-  border-top: 8px solid currentColor;
-}
-
-.marker-pulse {
-  @apply absolute inset-0 rounded-full;
-  animation: marker-pulse 2s ease-in-out infinite;
-}
-
-@keyframes marker-pulse {
-  0% {
-    transform: scale(1);
-    opacity: 0.5;
-  }
-  50% {
-    transform: scale(1.5);
-    opacity: 0;
-  }
-  100% {
-    transform: scale(1);
-    opacity: 0.5;
-  }
-}
-
-/* User location marker */
-.user-location-marker {
-  @apply w-4 h-4 bg-blue-500 rounded-full;
-  @apply border-2 border-white shadow-lg;
-}
-
-.user-location-pulse {
-  @apply absolute w-12 h-12 bg-blue-500/30 rounded-full;
-  animation: location-pulse 2s ease-in-out infinite;
-}
-
-@keyframes location-pulse {
-  0% {
-    transform: scale(0.5);
-    opacity: 1;
-  }
-  100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
-
-/* Modal backdrop blur fix for Safari */
-@supports (-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)) {
-  .modal-backdrop {
-    -webkit-backdrop-filter: blur(4px);
-    backdrop-filter: blur(4px);
-  }
-}
-
-/* Focus visible styles */
-:focus-visible {
-  @apply outline-none ring-2 ring-emerald-500 ring-offset-2 ring-offset-slate-900;
-}
-
-/* Selection styles */
-::selection {
-  @apply bg-emerald-500/30 text-white;
-}
-
-/* Placeholder styles */
-::placeholder {
-  @apply text-slate-500;
-}
-
-/* Disabled state */
-:disabled {
-  @apply opacity-50 cursor-not-allowed;
-}
-
-/* Print styles */
-@media print {
-  body {
-    @apply bg-white text-black;
-  }
-
-  .no-print {
-    display: none !important;
-  }
-}
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }

@@ -1,140 +1,70 @@
-# UMass Lost & Found
+# foundthelost
 
-A map-based real-time lost and found platform for UMass Amherst students.
+A map-first lost & found platform for college campuses. **Make lost temporary.**
+Pilot: UMass Amherst.
 
-## Features
+Students report what they lost or found, an AI matching engine privately pairs them,
+and the map shows exactly where to go. Not a public bulletin board — you only ever see
+items matched to you.
 
-- 🗺️ **Interactive Map** - Leaflet-based map centered on UMass campus
-- 🔐 **UMass Authentication** - Email-based auth restricted to @umass.edu domains
-- 📝 **Report Items** - Multi-step forms for reporting lost and found items
-- 🤖 **AI Matching** - Smart algorithm matches lost items with found items
-- 💬 **Real-time Chat** - Direct messaging between finders and owners
-- 🏆 **Karma System** - Gamification with badges and leaderboards
-- 🌙 **Dark Mode** - Beautiful glassmorphism design
+## Stack
 
-## Tech Stack
+- **React 18 + Vite** — SPA
+- **Tailwind CSS** — design system (cream / lime / coral, General Sans + JetBrains Mono)
+- **MapLibre GL v5** — 3D vector campus map + globe intro
+- **Framer Motion** — animation
+- **Supabase** — Postgres, Auth, RLS (the backend)
 
-- **Frontend:** React 18 + Vite + Tailwind CSS
-- **Maps:** Leaflet + react-leaflet
-- **Backend:** Supabase (PostgreSQL + Auth + Realtime + Storage)
-- **Hosting:** Vercel
-
-## Getting Started
-
-### Prerequisites
-
-- Node.js 18+ and npm
-- Supabase account
-
-### Installation
-
-1. Clone the repository:
-   ```bash
-   git clone https://github.com/yourusername/umass-lost-found.git
-   cd umass-lost-found
-   ```
-
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
-
-3. Create a `.env.local` file:
-   ```bash
-   cp .env.example .env.local
-   ```
-
-4. Update `.env.local` with your Supabase credentials:
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
-
-5. Start the development server:
-   ```bash
-   npm run dev
-   ```
-
-### Supabase Setup
-
-1. Create a new Supabase project at [supabase.com](https://supabase.com)
-
-2. Run the database migrations (SQL in `supabase/migrations/`)
-
-3. Enable Row Level Security (RLS) on all tables
-
-4. Create a storage bucket named `item-photos`
-
-5. Configure authentication:
-   - Enable email auth
-   - Add email restriction for @umass.edu and @students.umass.edu
-
-## Database Schema
-
-### Tables
-
-- `users` - User profiles with karma points and badges
-- `lost_items` - Reported lost items
-- `found_items` - Reported found items
-- `matches` - AI-generated matches between items
-- `conversations` - Chat conversations
-- `messages` - Chat messages
-- `keyword_nodes` - Keyword synonyms for matching
-- `reviews` - User reviews
-
-## Project Structure
-
-```
-src/
-├── components/
-│   ├── Auth/           # Login, SignUp, ProtectedRoute
-│   ├── Common/         # Button, Card, Modal, Toast
-│   ├── Forms/          # ReportLostItem, ReportFoundItem
-│   ├── Items/          # ItemDetail, MyItems
-│   ├── Map/            # MapContainer, MapPin, SearchFilter
-│   ├── Messaging/      # ChatList, ChatThread
-│   ├── Navigation/     # Navbar, BottomNav
-│   └── Profile/        # UserProfile, Leaderboard, Settings
-├── hooks/
-│   └── useAuth.js      # Authentication hook
-├── utils/
-│   ├── constants.js    # App constants and helpers
-│   ├── scoring.js      # AI matching algorithm
-│   └── supabaseClient.js
-├── App.jsx             # Main app with routing
-├── main.jsx            # Entry point
-└── index.css           # Global styles
-```
-
-## Deployment
-
-### Vercel
-
-1. Push to GitHub
-2. Import project in Vercel
-3. Add environment variables
-4. Deploy
-
-### Build for Production
+## Run locally
 
 ```bash
-npm run build
+npm install
+npm run dev          # http://localhost:5173
 ```
 
-## Contributing
+The app runs in **demo mode** out of the box — no backend needed. All data persists to
+`localStorage`, including real matching. Use the avatar menu → **Reset demo data** to start fresh.
 
-1. Fork the repository
-2. Create a feature branch
-3. Commit your changes
-4. Push to the branch
-5. Open a Pull Request
+## Going live (Supabase)
+
+1. Create a project at [supabase.com](https://supabase.com).
+2. **SQL Editor** → run `supabase/migrations/001_foundthelost_schema.sql`.
+3. **Authentication → Providers → Email**: keep email confirmations **on**.
+4. **Settings → API** → copy the Project URL + anon key.
+5. `cp .env.example .env.local` and fill them in.
+6. Restart `npm run dev`. The app now uses Supabase for auth, data, and matching.
+
+When `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are absent, the app stays in demo mode.
+
+## Security posture
+
+- **RLS on every table.** Items are private by default — you only read your own.
+- **Found items are revealed only through matches**, never by browsing.
+- **Matching is server-side** (`match_item`, a `SECURITY DEFINER` function). Clients have
+  no insert path into `matches`, so a match can't be forged to peek at someone's item.
+- **@umass.edu enforced at the database** via the signup trigger (client checks are just UX).
+- **No email/PII** in the readable `profiles` table — only name + karma (the leaderboard).
+- **Security headers + CSP** set in `netlify.toml`.
+- The anon key is public by design; it's safe *because* of RLS. The `service_role` key must
+  never appear in this repo or the frontend. `.env*` is gitignored.
+
+## What's real vs. demo (status)
+
+**Working now (demo + live):**
+- Globe intro, 3D map, sticker pins, lost→found path
+- Three-tab private sheet (matches / lost / found), report flows
+- Matching engine with transparent score breakdown
+- Karma + leaderboard, in-app chat ("text portal"), UMass-email auth
+- Standalone landing page (`public/landing.html`)
+
+**Mocked / not yet built:**
+- **Snap & Fill** — the photo→fields step is a scripted animation; no real vision model yet.
+- **Photo upload / storage** — bucket + policies are stubbed in the migration.
+- **Push notifications** on match.
+- **Proof-of-ownership** step for sensitive items (IDs, cards).
+- **Admin dashboard** for campus staff.
+- Chat is local in demo; live chat conversations aren't auto-created from a confirmed match yet.
 
 ## License
 
-MIT License - see LICENSE file for details
-
-## Acknowledgments
-
-- UMass Amherst community
-- Anthropic Claude for AI assistance
-- Supabase team for the amazing backend
+© 2026 foundthelost. All rights reserved.
