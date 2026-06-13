@@ -1,19 +1,20 @@
 -- ============================================================================
 -- foundthelost — hardened schema v2 (June 2026)
--- Security posture:
---   * RLS on every table; items are PRIVATE by default (no public bulletin board)
---   * Found items are revealed ONLY through server-created matches
---   * Matching runs in a SECURITY DEFINER function — clients can never INSERT
---     into `matches` directly, so nobody can forge a match to peek at an item
---   * @umass.edu enforced at the database (client checks are convenience only)
---   * No PII (email) stored in the readable profiles table
+-- Safe to re-run from scratch (drops + recreates). Uses NAMED dollar-quote tags
+-- ($ftl$) so the $ inside the email regex can't confuse the SQL editor's parser.
 -- ============================================================================
+
+-- clean slate (no-op on a fresh project) ------------------------------------
+drop table if exists public.messages, public.conversations, public.matches,
+  public.items, public.profiles cascade;
+drop function if exists public.match_item(uuid) cascade;
+drop function if exists public.km_between(double precision, double precision, double precision, double precision) cascade;
+drop function if exists public.handle_new_user() cascade;
+drop function if exists public.touch_conversation() cascade;
 
 create extension if not exists pg_trgm; -- free fuzzy text similarity
 
--- ---------------------------------------------------------------- profiles
--- NOTE: no email column. Email lives in auth.users (self-readable only).
--- profiles holds only what a campus leaderboard legitimately shows.
+-- profiles (no email PII — only what a campus leaderboard shows) --------------
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
   name text not null default 'Student',
@@ -23,9 +24,9 @@ create table public.profiles (
   created_at timestamptz not null default now()
 );
 
--- Auto-create a profile on signup AND enforce the UMass email domain at the DB.
+-- auto-create profile on signup + enforce @umass.edu at the DB
 create or replace function public.handle_new_user()
-returns trigger language plpgsql security definer set search_path = public as $$
+returns trigger language plpgsql security definer set search_path = public as $ftl$
 begin
   if new.email !~* '^[A-Za-z0-9._%+-]+@(students\.)?umass\.edu$' then
     raise exception 'Only @umass.edu accounts are allowed';
@@ -33,13 +34,13 @@ begin
   insert into public.profiles (id, name)
   values (new.id, coalesce(new.raw_user_meta_data ->> 'name', split_part(new.email, '@', 1)));
   return new;
-end $$;
+end $ftl$;
 
 create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
--- ---------------------------------------------------------------- items
+-- items ----------------------------------------------------------------------
 create table public.items (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles (id) on delete cascade,
@@ -47,7 +48,7 @@ create table public.items (
   name text not null check (char_length(name) <= 120),
   description text not null default '' check (char_length(description) <= 2000),
   category text not null default 'other',
-  attributes jsonb not null default '{}',     -- Snap & Fill fingerprint (phase 3)
+  attributes jsonb not null default '{}',
   photo_url text,
   lat double precision not null check (lat between -90 and 90),
   lng double precision not null check (lng between -180 and 180),
@@ -62,19 +63,19 @@ create index items_user_idx on public.items (user_id);
 create index items_kind_status_idx on public.items (kind, status);
 create index items_name_trgm_idx on public.items using gin (name gin_trgm_ops);
 
--- ---------------------------------------------------------------- matches
+-- matches --------------------------------------------------------------------
 create table public.matches (
   id uuid primary key default gen_random_uuid(),
   lost_item_id uuid not null references public.items (id) on delete cascade,
   found_item_id uuid not null references public.items (id) on delete cascade,
   score numeric not null,
   breakdown jsonb not null default '{}',
-  status text not null default 'pending',     -- pending | confirmed | rejected
+  status text not null default 'pending',
   created_at timestamptz not null default now(),
   unique (lost_item_id, found_item_id)
 );
 
--- ---------------------------------------------------------------- chat
+-- chat -----------------------------------------------------------------------
 create table public.conversations (
   id uuid primary key default gen_random_uuid(),
   match_id uuid references public.matches (id) on delete set null,
@@ -97,33 +98,27 @@ create table public.messages (
 create index messages_conversation_idx on public.messages (conversation_id, created_at);
 
 create or replace function public.touch_conversation()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql as $ftl$
 begin
   update public.conversations set last_message_at = new.created_at where id = new.conversation_id;
   return new;
-end $$;
+end $ftl$;
 
 create trigger on_message_sent
   after insert on public.messages
   for each row execute function public.touch_conversation();
 
--- ============================================================================
--- matching — runs server-side with definer rights. A user may only trigger
--- matching for an item THEY own; the function pairs it against everyone else's
--- opposite-kind items and writes any matches >= threshold. Clients have NO
--- direct insert path into `matches`, so a match cannot be forged to leak an item.
--- ============================================================================
-
+-- matching (server-side; clients can't forge matches) ------------------------
 create or replace function public.km_between(lat1 double precision, lng1 double precision, lat2 double precision, lng2 double precision)
-returns double precision language sql immutable as $$
+returns double precision language sql immutable as $ftl$
   select 6371 * 2 * asin(sqrt(
     power(sin(radians(lat2 - lat1) / 2), 2) +
     cos(radians(lat1)) * cos(radians(lat2)) * power(sin(radians(lng2 - lng1) / 2), 2)
   ));
-$$;
+$ftl$;
 
 create or replace function public.match_item(p_item_id uuid)
-returns int language plpgsql security definer set search_path = public as $$
+returns int language plpgsql security definer set search_path = public as $ftl$
 declare
   v_item public.items;
   v_count int := 0;
@@ -176,27 +171,23 @@ begin
     end if;
   end loop;
   return v_count;
-end $$;
+end $ftl$;
 
 revoke all on function public.match_item(uuid) from public, anon;
 grant execute on function public.match_item(uuid) to authenticated;
 
--- ============================================================================
--- Row Level Security
--- ============================================================================
+-- Row Level Security ---------------------------------------------------------
 alter table public.profiles enable row level security;
 alter table public.items enable row level security;
 alter table public.matches enable row level security;
 alter table public.conversations enable row level security;
 alter table public.messages enable row level security;
 
--- profiles: name + karma readable by signed-in users (campus leaderboard); self-editable
 create policy "profiles readable to members" on public.profiles
   for select using (auth.role() = 'authenticated');
 create policy "update own profile" on public.profiles
   for update using (auth.uid() = id);
 
--- items: private by default — you only see your own…
 create policy "own items select" on public.items
   for select using (auth.uid() = user_id);
 create policy "own items insert" on public.items
@@ -206,7 +197,6 @@ create policy "own items update" on public.items
 create policy "own items delete" on public.items
   for delete using (auth.uid() = user_id);
 
--- …except a found item that is matched to one of YOUR items (the private reveal)
 create policy "matched items readable" on public.items
   for select using (
     exists (
@@ -217,15 +207,12 @@ create policy "matched items readable" on public.items
     )
   );
 
--- matches: visible only to the two owners; NO insert/update/delete policy →
--- clients cannot write matches at all (only the SECURITY DEFINER function can)
 create policy "matches visible to parties" on public.matches
   for select using (
     exists (select 1 from public.items i where i.id = lost_item_id and i.user_id = auth.uid())
     or exists (select 1 from public.items i where i.id = found_item_id and i.user_id = auth.uid())
   );
 
--- conversations + messages: participants only
 create policy "own conversations" on public.conversations
   for select using (auth.uid() in (participant_a, participant_b));
 create policy "create own conversations" on public.conversations
@@ -241,13 +228,3 @@ create policy "messages insert" on public.messages
     and exists (select 1 from public.conversations c
                 where c.id = conversation_id and auth.uid() in (c.participant_a, c.participant_b))
   );
-
--- ============================================================================
--- Storage (item photos) — create the bucket in the dashboard or via API, then:
---   Bucket: item-photos (private). Policies below restrict to owner folders.
--- Uncomment after creating the bucket:
--- ----------------------------------------------------------------------------
--- create policy "upload own photos" on storage.objects
---   for insert with check (bucket_id = 'item-photos' and (storage.foldername(name))[1] = auth.uid()::text);
--- create policy "read own photos" on storage.objects
---   for select using (bucket_id = 'item-photos' and (storage.foldername(name))[1] = auth.uid()::text);
