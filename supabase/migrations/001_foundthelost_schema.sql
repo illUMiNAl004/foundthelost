@@ -121,57 +121,65 @@ $$;
 create or replace function public.match_item(p_item_id uuid)
 returns int language plpgsql security definer set search_path = public as $$
 declare
-  v_item public.items;
-  v_count int := 0;
+  my_user uuid;
+  my_kind text;
+  my_name text;
+  my_blob text;
+  my_cat text;
+  my_lat double precision;
+  my_lng double precision;
+  my_occ timestamptz;
+  hits int := 0;
   r record;
-  v_sem numeric; v_attr numeric; v_loc numeric; v_time numeric; v_score numeric;
-  v_km numeric; v_hours numeric;
+  s_sem numeric; s_attr numeric; s_loc numeric; s_time numeric; s_score numeric;
+  s_km numeric; s_hours numeric;
 begin
-  select * into v_item from public.items where id = p_item_id;
-  if v_item.id is null then raise exception 'item not found'; end if;
-  if v_item.user_id <> auth.uid() then raise exception 'not authorized for this item'; end if;
+  select user_id, kind, name, lower(name || ' ' || coalesce(description, '')),
+         category, lat, lng, occurred_at
+    into my_user, my_kind, my_name, my_blob, my_cat, my_lat, my_lng, my_occ
+    from public.items where id = p_item_id;
+
+  if my_user is null then raise exception 'item not found'; end if;
+  if my_user <> auth.uid() then raise exception 'not authorized for this item'; end if;
 
   for r in
     select * from public.items
-    where kind = case when v_item.kind = 'lost' then 'found' else 'lost' end
+    where kind = case when my_kind = 'lost' then 'found' else 'lost' end
       and status not in ('closed', 'recovered', 'returned')
-      and user_id <> v_item.user_id
+      and user_id <> my_user
   loop
-    v_sem := greatest(
-      similarity(lower(v_item.name), lower(r.name)),
-      0.5 * similarity(
-        lower(v_item.name || ' ' || coalesce(v_item.description, '')),
-        lower(r.name || ' ' || coalesce(r.description, ''))
-      )
+    s_sem := greatest(
+      similarity(lower(my_name), lower(r.name)),
+      0.5 * similarity(my_blob, lower(r.name || ' ' || coalesce(r.description, '')))
     );
-    v_attr := case when v_item.category = r.category then 1 else 0.3 end;
-    v_km := public.km_between(v_item.lat, v_item.lng, r.lat, r.lng);
-    v_loc := case
-      when v_km <= 0.05 then 1 when v_km <= 0.12 then 0.9 when v_km <= 0.25 then 0.78
-      when v_km <= 0.5 then 0.6 when v_km <= 1 then 0.42 when v_km <= 2 then 0.25 else 0.1 end;
-    v_hours := abs(extract(epoch from (v_item.occurred_at - r.occurred_at)) / 3600.0);
-    v_time := case
-      when v_hours <= 2 then 1 when v_hours <= 6 then 0.9 when v_hours <= 24 then 0.78
-      when v_hours <= 48 then 0.6 when v_hours <= 168 then 0.4 else 0.2 end;
+    s_attr := case when my_cat = r.category then 1 else 0.3 end;
+    s_km := public.km_between(my_lat, my_lng, r.lat, r.lng);
+    s_loc := case
+      when s_km <= 0.05 then 1 when s_km <= 0.12 then 0.9 when s_km <= 0.25 then 0.78
+      when s_km <= 0.5 then 0.6 when s_km <= 1 then 0.42 when s_km <= 2 then 0.25 else 0.1 end;
+    s_hours := abs(extract(epoch from (my_occ - r.occurred_at)) / 3600.0);
+    s_time := case
+      when s_hours <= 2 then 1 when s_hours <= 6 then 0.9 when s_hours <= 24 then 0.78
+      when s_hours <= 48 then 0.6 when s_hours <= 168 then 0.4 else 0.2 end;
 
-    v_score := round((0.45 * v_sem + 0.2 * v_attr + 0.2 * v_loc + 0.15 * v_time) * 100);
+    s_score := round((0.45 * s_sem + 0.2 * s_attr + 0.2 * s_loc + 0.15 * s_time) * 100);
 
-    if v_score >= 55 then
+    if s_score >= 55 then
       insert into public.matches (lost_item_id, found_item_id, score, breakdown, status)
       values (
-        case when v_item.kind = 'lost' then v_item.id else r.id end,
-        case when v_item.kind = 'lost' then r.id else v_item.id end,
-        v_score,
-        jsonb_build_object('semantic', round(v_sem * 100), 'attributes', round(v_attr * 100),
-                           'location', round(v_loc * 100), 'time', round(v_time * 100), 'km', round(v_km, 3)),
+        case when my_kind = 'lost' then p_item_id else r.id end,
+        case when my_kind = 'lost' then r.id else p_item_id end,
+        s_score,
+        jsonb_build_object('semantic', round(s_sem * 100), 'attributes', round(s_attr * 100),
+                           'location', round(s_loc * 100), 'time', round(s_time * 100), 'km', round(s_km, 3)),
         'pending'
       )
       on conflict (lost_item_id, found_item_id)
         do update set score = excluded.score, breakdown = excluded.breakdown;
-      v_count := v_count + 1;
+      hits := hits + 1;
     end if;
   end loop;
-  return v_count;
+  return hits;
 end $$;
 
 revoke all on function public.match_item(uuid) from public, anon;
