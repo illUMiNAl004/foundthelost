@@ -10,7 +10,7 @@ import AuthGate from './components/AuthGate.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import LeaderboardPanel from './components/LeaderboardPanel.jsx'
 import { useAuth } from './hooks/useAuth.jsx'
-import { getMyItems, createItem, getKarma, getConversations } from './lib/api.js'
+import { getMyItems, createItem, getKarma, getConversations, openConversation } from './lib/api.js'
 
 function RecoveryTicker() {
   const mv = useMotionValue(0)
@@ -43,6 +43,7 @@ export default function App() {
   const [selected, setSelected] = useState(null)
   const [flow, setFlow] = useState(null) // null | 'lost' | 'found'
   const [panel, setPanel] = useState(null) // null | 'chat' | 'board'
+  const [activeConv, setActiveConv] = useState(null) // conversation id to open in chat
   const [karma, setKarma] = useState(0)
   const [unread, setUnread] = useState(0)
   const mapApi = useRef(null)
@@ -105,6 +106,21 @@ export default function App() {
   const handleGoToPlace = (place) => {
     setSelected(null)
     mapApi.current?.flyTo(place.coords, 16.4)
+  }
+  // Open (or create) a chat with the finder of a matched item. claim=true posts an
+  // opening "this might be mine" message. No confirmation needed to start chatting.
+  const handleMessageMatch = async (matchItem, claim) => {
+    try {
+      const firstMessage = claim
+        ? `👋 Hey! I think the ${matchItem.name} you found might be mine. Can we meet up?`
+        : undefined
+      const convId = await openConversation(user, matchItem, firstMessage)
+      setActiveConv(convId)
+      setPanel('chat')
+    } catch (e) {
+      console.error('openConversation failed:', e)
+      alert(`Could not start the chat:\n${e.message || e}`)
+    }
   }
   const handleReportSubmit = async (draft) => {
     try {
@@ -177,6 +193,7 @@ export default function App() {
           onSelect={handleSelect}
           onBack={handleBack}
           onReport={setFlow}
+          onMessage={handleMessageMatch}
         />
       )}
 
@@ -206,8 +223,10 @@ export default function App() {
         {panel === 'chat' && (
           <ChatPanel
             key="chat"
+            initialConversationId={activeConv}
             onClose={() => {
               setPanel(null)
+              setActiveConv(null)
               refresh()
             }}
           />

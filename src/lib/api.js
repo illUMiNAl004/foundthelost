@@ -140,6 +140,7 @@ export async function getMyItems(user) {
       lostAt: [m.lost.lng, m.lost.lat],
       matchId: m.id,
       matchedLostId: m.lost.id,
+      finderId: m.found.user_id, // the person who found it — for messaging
     }))
   const matchedLostIds = new Set((matchRows || []).map((m) => m.lost?.id))
   return [...matchItems, ...mine.filter((it) => !(it.kind === 'lost' && matchedLostIds.has(it.id)))]
@@ -233,6 +234,59 @@ export async function getConversations(user) {
       })),
     }
   })
+}
+
+// Get-or-create the conversation for a match, optionally posting a first message.
+// Returns the conversation id. Both people can chat immediately — no confirmation gate.
+export async function openConversation(user, matchItem, firstMessage) {
+  const label = `${matchItem.emoji} ${matchItem.name}`
+
+  if (useDemo(user)) {
+    const db = loadDemo()
+    let conv = db.conversations.find((c) => c.matchId && c.matchId === matchItem.matchId)
+    if (!conv) {
+      conv = {
+        id: `c-${db.nextId++}`,
+        matchId: matchItem.matchId || matchItem.id,
+        with: { name: 'Finder', avatar: '🧑‍🎓' },
+        item: label,
+        unread: 0,
+        messages: [],
+      }
+      db.conversations = [conv, ...db.conversations]
+    }
+    if (firstMessage) {
+      conv.messages.push({ from: 'me', text: firstMessage, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })
+    }
+    saveDemo(db)
+    return conv.id
+  }
+
+  // live: reuse an existing conversation for this match if there is one
+  const { data: existing } = await supabase
+    .from('conversations')
+    .select('id')
+    .eq('match_id', matchItem.matchId)
+    .limit(1)
+  let convId = existing?.[0]?.id
+  if (!convId) {
+    const { data, error } = await supabase
+      .from('conversations')
+      .insert({
+        match_id: matchItem.matchId,
+        item_label: label,
+        participant_a: user.id,
+        participant_b: matchItem.finderId,
+      })
+      .select('id')
+      .single()
+    if (error) throw error
+    convId = data.id
+  }
+  if (firstMessage) {
+    await supabase.from('messages').insert({ conversation_id: convId, sender_id: user.id, content: firstMessage })
+  }
+  return convId
 }
 
 export async function sendMessage(user, conversationId, text) {

@@ -5,16 +5,19 @@ import { getConversations, sendMessage, markConversationRead } from '../lib/api.
 
 const SPRING = { type: 'spring', stiffness: 320, damping: 32 }
 
-export default function ChatPanel({ onClose }) {
+export default function ChatPanel({ onClose, initialConversationId }) {
   const { user } = useAuth()
   const [convs, setConvs] = useState([])
-  const [active, setActive] = useState(null)
+  const [active, setActive] = useState(initialConversationId || null)
   const [draft, setDraft] = useState('')
   const scrollRef = useRef(null)
 
   useEffect(() => {
-    getConversations(user).then(setConvs).catch(console.error)
-  }, [user])
+    getConversations(user).then((cs) => {
+      setConvs(cs)
+      if (initialConversationId) markConversationRead(initialConversationId)
+    }).catch(console.error)
+  }, [user, initialConversationId])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 9e6, behavior: 'smooth' })

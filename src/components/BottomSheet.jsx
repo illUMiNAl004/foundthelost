@@ -12,10 +12,9 @@ const KIND_TILES = {
   sensitive: 'bg-grape/50',
 }
 
-export default function BottomSheet({ items, selected, onSelect, onBack, onReport }) {
+export default function BottomSheet({ items, selected, onSelect, onBack, onReport, onMessage }) {
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('match')
-  const [claimed, setClaimed] = useState(false)
   const [returned, setReturned] = useState(false)
 
   const expanded = open || !!selected
@@ -160,12 +159,10 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 {selected.kind === 'match' && (
                   <motion.button
                     whileTap={{ scale: 0.96 }}
-                    onClick={() => setClaimed(true)}
-                    className={`flex-1 rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition ${
-                      claimed ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'btn-lime'
-                    }`}
+                    onClick={() => onMessage?.(selected, true)}
+                    className="btn-lime flex-1 rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition"
                   >
-                    {claimed ? 'request sent ✓' : 'this is mine — verify'}
+                    👋 this is mine — message finder
                   </motion.button>
                 )}
                 {selected.kind === 'lost' && (
@@ -187,12 +184,16 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                     {returned ? 'reunited 🎉 +50 karma' : 'mark as returned'}
                   </motion.button>
                 )}
-                <motion.button
-                  whileTap={{ scale: 0.96 }}
-                  className="rounded-2xl border border-ink/15 bg-white/80 px-5 text-[15px] font-semibold backdrop-blur transition hover:bg-white dark:border-white/15 dark:bg-slate-800/70 dark:hover:bg-slate-800"
-                >
-                  💬
-                </motion.button>
+                {selected.kind === 'match' && (
+                  <motion.button
+                    whileTap={{ scale: 0.96 }}
+                    onClick={() => onMessage?.(selected, false)}
+                    title="Message the finder"
+                    className="rounded-2xl border border-ink/15 bg-white/80 px-5 text-[15px] font-semibold backdrop-blur transition hover:bg-white dark:border-white/15 dark:bg-slate-800/70 dark:hover:bg-slate-800"
+                  >
+                    💬
+                  </motion.button>
+                )}
               </div>
             </motion.div>
           ) : (

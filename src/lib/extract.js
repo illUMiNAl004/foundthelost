@@ -4,7 +4,9 @@
 import { CAMPUS_PLACES } from '../data/campusPlaces.js'
 
 const ITEMS = [
-  { label: 'AirPods', category: 'electronics', re: /airpod|earbud|earphone|headphone|\bpods?\b/ },
+  // headphones (over-ear) checked BEFORE earbuds so "headphones" isn't read as earbuds
+  { label: 'Headphones', category: 'electronics', re: /headphone|over[- ]?ear|headset|\bbeats\b/ },
+  { label: 'Earbuds', category: 'electronics', re: /airpod|earbud|earphone|\bear\s?pods?\b|\bpods?\b|\bbuds?\b/ },
   { label: 'iPhone', category: 'electronics', re: /iphone|samsung|android|\bphone\b/ },
   { label: 'Laptop', category: 'electronics', re: /laptop|macbook|chromebook|notebook/ },
   { label: 'Charger', category: 'electronics', re: /charger|cable|cord|adapter|power bank/ },
