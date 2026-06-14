@@ -1,8 +1,49 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { parseDescription } from '../lib/extract.js'
+import HighlightedInput, { TYPE_STYLE } from './HighlightedInput.jsx'
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
+
+// color-coded keyword chips (showing the user's actual words) + a tiny legend
+function ChipRow({ parsed }) {
+  const { chips, suggestions } = parsed
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex min-h-[34px] flex-wrap gap-1.5">
+        {chips.map((chip, i) => {
+          const style = TYPE_STYLE[chip.type] || TYPE_STYLE.qualifier
+          return (
+            <motion.span
+              key={`${chip.text}-${i}`}
+              initial={{ opacity: 0, scale: 0.7 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ ...SPRING, delay: i * 0.04 }}
+              className={`rounded-full border px-2.5 py-1 font-mono text-[11px] font-bold ${style.chip}`}
+              title={style.label + (chip.learned ? ' · learned' : '')}
+            >
+              {chip.text}
+            </motion.span>
+          )
+        })}
+        {chips.length === 0 && (
+          <span className="text-[12px] text-slate-400">✦ keywords light up as you type…</span>
+        )}
+      </div>
+      {suggestions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500 dark:text-slate-400">
+          <span className="font-mono uppercase tracking-[0.05em] text-slate-400">did you mean</span>
+          {suggestions.map((s) => (
+            <span key={s.token} className="rounded-full border border-slate-300/60 bg-white/60 px-2 py-0.5 font-medium dark:border-white/10 dark:bg-slate-800/60">
+              {s.label}
+              <span className="text-slate-400"> · {s.token}</span>
+            </span>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 const AI_FIELDS = [
   { label: 'Item', value: 'AirPods Pro (2nd gen)' },
@@ -151,29 +192,14 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
                     Describe it like you'd text a friend. We'll structure it.
                   </p>
-                  <textarea
+                  <HighlightedInput
                     value={foundText}
-                    onChange={(e) => setFoundText(e.target.value)}
+                    onChange={setFoundText}
                     placeholder='e.g. "white AirPods Pro on a table at Berkshire around 2pm"'
-                    rows={3}
-                    className="mt-4 w-full resize-none rounded-2xl border border-slate-200/80 bg-white/70 p-4 text-[15px] outline-none backdrop-blur transition placeholder:text-slate-400 focus:border-lime dark:border-white/10 dark:bg-slate-800/60"
+                    spans={found.spans}
+                    autoFocus
                   />
-                  <div className="mt-3 flex min-h-[34px] flex-wrap gap-1.5">
-                    {found.chips.map((chip, i) => (
-                      <motion.span
-                        key={chip}
-                        initial={{ opacity: 0, scale: 0.7 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ ...SPRING, delay: i * 0.05 }}
-                        className="rounded-full border border-ink/20 bg-lime/60 px-2.5 py-1 font-mono text-[11px] font-bold text-ink dark:border-lime/30 dark:bg-lime/15 dark:text-lime"
-                      >
-                        {chip}
-                      </motion.span>
-                    ))}
-                    {found.chips.length === 0 && (
-                      <span className="text-[12px] text-slate-400">✦ keywords appear as you type…</span>
-                    )}
-                  </div>
+                  <ChipRow parsed={found} />
                 </>
               ) : isFound ? (
                 <>
@@ -242,29 +268,14 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
                     Describe it like you'd text a friend. We'll structure it.
                   </p>
-                  <textarea
+                  <HighlightedInput
                     value={lostText}
-                    onChange={(e) => setLostText(e.target.value)}
+                    onChange={setLostText}
                     placeholder='e.g. "navy Hydro Flask with a mountain sticker, lost near the ILC around 1pm"'
-                    rows={3}
-                    className="mt-4 w-full resize-none rounded-2xl border border-slate-200/80 bg-white/70 p-4 text-[15px] outline-none backdrop-blur transition placeholder:text-slate-400 focus:border-lime dark:border-white/10 dark:bg-slate-800/60"
+                    spans={lost.spans}
+                    autoFocus
                   />
-                  <div className="mt-3 flex min-h-[34px] flex-wrap gap-1.5">
-                    {lost.chips.map((chip, i) => (
-                      <motion.span
-                        key={chip}
-                        initial={{ opacity: 0, scale: 0.7 }}
-                        animate={{ opacity: 1, scale: 1 }}
-                        transition={{ ...SPRING, delay: i * 0.05 }}
-                        className="rounded-full border border-ink/20 bg-lime/60 px-2.5 py-1 font-mono text-[11px] font-bold text-ink dark:border-lime/30 dark:bg-lime/15 dark:text-lime"
-                      >
-                        {chip}
-                      </motion.span>
-                    ))}
-                    {lost.chips.length === 0 && (
-                      <span className="text-[12px] text-slate-400">✦ keywords appear as you type…</span>
-                    )}
-                  </div>
+                  <ChipRow parsed={lost} />
                 </>
               )}
 

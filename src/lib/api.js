@@ -3,6 +3,13 @@
 import { supabase, isLive } from './supabase.js'
 import { MY_ITEMS, COMMUNITY_FOUND, CAMPUS_CENTER } from '../data/mockItems.js'
 import { findMatches } from './matching.js'
+import { parseDescription } from './extract.js'
+import { learnTerms } from './lexicon.js'
+
+// Grow the self-learning dictionary from a real report's wording (best-effort).
+function learnFromDraft(draft) {
+  try { learnTerms(parseDescription(`${draft.name || ''} ${draft.description || ''}`).unknownTokens) } catch { /* non-fatal */ }
+}
 
 const DB_KEY = 'ftl-demo-db-v3'
 
@@ -147,6 +154,7 @@ export async function getMyItems(user) {
 }
 
 export async function createItem(user, draft) {
+  learnFromDraft(draft)
   if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
