@@ -4,11 +4,26 @@ import { supabase, isLive } from './supabase.js'
 import { MY_ITEMS, COMMUNITY_FOUND, CAMPUS_CENTER } from '../data/mockItems.js'
 import { findMatches } from './matching.js'
 import { parseDescription } from './extract.js'
-import { learnTerms } from './lexicon.js'
+import { learnTerms, hydrateLearned } from './lexicon.js'
 
-// Grow the self-learning dictionary from a real report's wording (best-effort).
-function learnFromDraft(draft) {
-  try { learnTerms(parseDescription(`${draft.name || ''} ${draft.description || ''}`).unknownTokens) } catch { /* non-fatal */ }
+// Grow the self-learning dictionary from a real report's wording (best-effort). In live
+// mode we also mirror each unknown term to the shared `lexicon` table so the database
+// learns across every student, not just this browser.
+function learnFromDraft(user, draft) {
+  try {
+    const tokens = parseDescription(`${draft.name || ''} ${draft.description || ''}`).unknownTokens
+    learnTerms(tokens)
+    if (!useDemo(user) && supabase) tokens.forEach((t) => supabase.rpc('bump_lexicon', { p_term: t }).then(() => {}, () => {}))
+  } catch { /* non-fatal */ }
+}
+
+// Pull promoted terms from the shared lexicon into the local parser (live mode, once).
+let _lexHydrated = false
+async function hydrateLexicon() {
+  if (_lexHydrated || !supabase) return
+  _lexHydrated = true
+  const { data } = await supabase.from('lexicon').select('term, type, canonical_id, label, category').eq('status', 'learned')
+  if (data?.length) hydrateLearned(data.map((r) => ({ ...r, alias: r.term })))
 }
 
 const DB_KEY = 'ftl-demo-db-v3'
@@ -124,6 +139,7 @@ export async function getMyItems(user) {
   }
 
   // ---- live ----
+  hydrateLexicon() // best-effort, fire-and-forget: grow the parser from shared learning
   const { data: rows, error } = await supabase
     .from('items')
     .select('*')
@@ -154,7 +170,7 @@ export async function getMyItems(user) {
 }
 
 export async function createItem(user, draft) {
-  learnFromDraft(draft)
+  learnFromDraft(user, draft)
   if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
