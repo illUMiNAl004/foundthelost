@@ -1,7 +1,7 @@
 // Free, on-device parsing of a free-text lost/found description into structured
 // chips + a clean title + a category. No API. (A real LLM "Snap & Fill" can slot
 // in behind the same return shape later.)
-import { CAMPUS_PLACES } from '../data/campusPlaces.js'
+import { matchPlace } from '../data/campusPlaces.js'
 
 const ITEMS = [
   // headphones (over-ear) checked BEFORE earbuds so "headphones" isn't read as earbuds
@@ -47,14 +47,6 @@ function findTime(text) {
   return null
 }
 
-function findPlace(text) {
-  const t = text.toLowerCase()
-  for (const p of CAMPUS_PLACES) {
-    if (t.includes(p.name.toLowerCase()) || p.aliases.some((a) => t.includes(a))) return p
-  }
-  return null
-}
-
 /**
  * Parse a free-text description → { chips, title, category, color, place, time }.
  * chips: short labels to show under the input; title: a clean item name for the report.
@@ -71,7 +63,7 @@ export function parseDescription(text = '') {
   const item = ITEMS.find((i) => i.re.test(t)) || null
   const color = COLORS.find((c) => new RegExp(`\\b${c}\\b`).test(t)) || null
   const quals = QUALIFIERS.filter((q) => q.re.test(t)).map((q) => q.label)
-  const placeObj = findPlace(text)
+  const placeObj = matchPlace(text)
   const place = placeObj?.name || null
   const time = findTime(text)
 
