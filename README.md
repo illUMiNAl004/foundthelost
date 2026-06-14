@@ -28,7 +28,9 @@ The app runs in **demo mode** out of the box — no backend needed. All data per
 ## Going live (Supabase)
 
 1. Create a project at [supabase.com](https://supabase.com).
-2. **SQL Editor** → run `supabase/migrations/001_foundthelost_schema.sql`.
+2. **SQL Editor** → run `supabase/migrations/001_foundthelost_schema.sql`, then
+   `supabase/migrations/002_matching_v2.sql` (canonical aliases, self-learning
+   lexicon, and the gated/floored matching engine).
 3. **Authentication → Providers → Email**: keep email confirmations **on**.
 4. **Settings → API** → copy the Project URL + anon key.
 5. `cp .env.example .env.local` and fill them in.
@@ -42,6 +44,10 @@ When `VITE_SUPABASE_URL` / `VITE_SUPABASE_ANON_KEY` are absent, the app stays in
 - **Found items are revealed only through matches**, never by browsing.
 - **Matching is server-side** (`match_item`, a `SECURITY DEFINER` function). Clients have
   no insert path into `matches`, so a match can't be forged to peek at someone's item.
+- **One scoring spec, two runtimes.** `src/lib/scoring.js` (demo) and the SQL `match_item`
+  (live) implement the *same* spec: a must-match item-identity gate + per-feature weighted
+  score + semantic floor. Different known item types (laptop vs phone) are hard-rejected,
+  so place+time proximity alone can never forge a false match.
 - **@umass.edu enforced at the database** via the signup trigger (client checks are just UX).
 - **No email/PII** in the readable `profiles` table — only name + karma (the leaderboard).
 - **Security headers + CSP** set in `netlify.toml`.
