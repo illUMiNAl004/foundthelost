@@ -1,48 +1,50 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { parseDescription } from '../lib/extract.js'
+import { BRANDS_FOR, MATERIALS_FOR } from '../data/dictionary.js'
 import HighlightedInput, { TYPE_STYLE } from './HighlightedInput.jsx'
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
 
-// Brand prompts per item type — the more specific the report, the better the match.
-const BRANDS = {
-  earbuds: ['Apple', 'Samsung', 'Bose', 'Sony', 'Beats', 'JBL'],
-  headphones: ['Sony', 'Bose', 'Beats', 'JBL', 'Sennheiser', 'Apple'],
-  phone: ['Apple', 'Samsung', 'Google', 'OnePlus'],
-  laptop: ['Apple', 'Dell', 'HP', 'Lenovo', 'Asus'],
-  watch: ['Apple', 'Samsung', 'Fitbit', 'Garmin'],
-  water_bottle: ['Hydro Flask', 'Stanley', 'Owala', 'Yeti', 'Nalgene', 'Camelbak'],
-}
-const COLOR_OPTS = ['Black', 'White', 'Blue', 'Red', 'Green', 'Grey', 'Brown', 'Yellow', 'Purple', 'Pink']
+const COLOR_OPTS = ['Black', 'White', 'Blue', 'Navy', 'Red', 'Green', 'Grey', 'Brown', 'Yellow', 'Purple', 'Pink']
+// Top high-traffic places offered when location is missing (all parse back to a pin).
+const WHERE_OPTS = ['Du Bois Library', 'Berkshire', 'Worcester', 'Student Union', 'Campus Center', 'ILC', 'Rec Center']
 const wordPresent = (text, w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)
 
-// Suggestive follow-ups: only the questions that are still unanswered, as tap-to-add
-// chips. Tapping appends the word to the description so it re-parses, highlights, and
-// strengthens matching. Nothing is forced — every prompt is optional.
-function RefineDetails({ parsed, text, onAdd }) {
+// The "completeness coach": a friendly, conversational set of follow-ups that asks ONLY
+// for what's still missing — location (incl. "which dining hall?" / "where roughly?"),
+// colour, brand, material — for every item type. Tapping a chip appends the word so the
+// description re-parses, highlights, and strengthens the match. Everything is optional.
+function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
   const itemSpan = parsed.spans.find((s) => s.type === 'item')
   const itemId = itemSpan?.payload.id
-  if (!itemId) return null
-  const hasColor = parsed.spans.some((s) => s.type === 'color')
-  const brands = BRANDS[itemId]
+  const brands = itemId ? BRANDS_FOR[itemId] : null
+  const materials = itemId ? MATERIALS_FOR[itemId] : null
   const hasBrand = brands?.some((b) => wordPresent(text, b))
-  if (hasColor && (!brands || hasBrand)) return null
+  const hasMaterial = materials?.some((m) => wordPresent(text, m))
 
-  const Row = ({ label, opts }) => (
+  // what to ask, in priority order
+  const askWhich = parsed.ambiguousPlace && !noLocation
+  const askWhere = parsed.missing.location && !parsed.ambiguousPlace && !noLocation && text.trim().length > 3
+  const askColor = itemId && parsed.missing.color
+  const askBrand = brands && !hasBrand
+  const askMaterial = materials && !hasMaterial
+  if (!askWhich && !askWhere && !askColor && !askBrand && !askMaterial) return null
+
+  const Chip = ({ label, onClick, accent }) => (
+    <button
+      onClick={onClick}
+      className={`rounded-full border px-2.5 py-1 text-[12px] font-semibold transition ${
+        accent ? 'border-slate-300/60 bg-white/60 text-slate-500 hover:border-slate-400 dark:border-white/10 dark:bg-slate-800/60'
+               : 'border-ink/15 bg-white/70 hover:border-lime hover:bg-lime/20 dark:border-white/10 dark:bg-slate-800/60'}`}
+    >
+      {label}
+    </button>
+  )
+  const Row = ({ label, children }) => (
     <div>
-      <p className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400">{label}?</p>
-      <div className="flex flex-wrap gap-1.5">
-        {opts.map((o) => (
-          <button
-            key={o}
-            onClick={() => onAdd(o)}
-            className="rounded-full border border-ink/15 bg-white/70 px-2.5 py-1 text-[12px] font-semibold transition hover:border-lime hover:bg-lime/20 dark:border-white/10 dark:bg-slate-800/60"
-          >
-            {o}
-          </button>
-        ))}
-      </div>
+      <p className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400">{label}</p>
+      <div className="flex flex-wrap gap-1.5">{children}</div>
     </div>
   )
 
@@ -50,17 +52,32 @@ function RefineDetails({ parsed, text, onAdd }) {
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mt-3 space-y-2.5 rounded-2xl border border-lime/30 bg-lime/[0.07] p-3"
+      className="mt-3 space-y-3 rounded-2xl border border-lime/30 bg-lime/[0.07] p-3"
     >
-      <p className="text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">A couple details sharpen the match ✨</p>
-      {!hasColor && <Row label="Color" opts={COLOR_OPTS} />}
-      {brands && !hasBrand && <Row label="Brand" opts={brands} />}
+      <p className="text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">A few details sharpen the match ✨</p>
+
+      {askWhich && (
+        <Row label={`which ${parsed.ambiguousPlace.label}?`}>
+          {parsed.ambiguousPlace.options.map((p) => (
+            <Chip key={p.id} label={`${p.emoji} ${p.name.replace(' Dining Commons', '').replace(' Center', '')}`} onClick={() => onAdd(p.name)} />
+          ))}
+        </Row>
+      )}
+      {askWhere && (
+        <Row label="where, roughly?">
+          {WHERE_OPTS.map((w) => <Chip key={w} label={w} onClick={() => onAdd(w)} />)}
+          <Chip label="I'm not sure" accent onClick={onNoLocation} />
+        </Row>
+      )}
+      {askColor && <Row label="color?">{COLOR_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
+      {askBrand && <Row label="brand?">{brands.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
+      {askMaterial && <Row label="material?">{materials.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
     </motion.div>
   )
 }
 
-// color-coded keyword chips (showing the user's actual words) + a tiny legend
-function ChipRow({ parsed }) {
+// color-coded keyword chips (the user's actual words) + tap-to-apply "did you mean"
+function ChipRow({ parsed, onApply }) {
   const { chips, suggestions } = parsed
   return (
     <div className="mt-3 space-y-2">
@@ -88,10 +105,13 @@ function ChipRow({ parsed }) {
         <div className="flex flex-wrap items-center gap-1.5 text-[12px] text-slate-500 dark:text-slate-400">
           <span className="font-mono uppercase tracking-[0.05em] text-slate-400">did you mean</span>
           {suggestions.map((s) => (
-            <span key={s.token} className="rounded-full border border-slate-300/60 bg-white/60 px-2 py-0.5 font-medium dark:border-white/10 dark:bg-slate-800/60">
-              {s.label}
-              <span className="text-slate-400"> · {s.token}</span>
-            </span>
+            <button
+              key={s.token}
+              onClick={() => onApply?.(s.label)}
+              className="rounded-full border border-lime/50 bg-lime/15 px-2 py-0.5 font-medium text-ink transition hover:bg-lime/30 dark:text-slate-200"
+            >
+              {s.label} <span className="text-slate-400">↵</span>
+            </button>
           ))}
         </div>
       )}
@@ -150,6 +170,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [lostText, setLostText] = useState('')
   const [foundMode, setFoundMode] = useState(null) // null | 'photo' | 'text'
   const [foundText, setFoundText] = useState('')
+  const [noLocation, setNoLocation] = useState(false)
 
   const isFound = mode === 'found'
   const lost = useMemo(() => parseDescription(lostText), [lostText])
@@ -256,8 +277,8 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     spans={found.spans}
                     autoFocus
                   />
-                  <ChipRow parsed={found} />
-                  <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} />
+                  <ChipRow parsed={found} onApply={addWord(setFoundText)} />
+                  <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation} onNoLocation={() => setNoLocation(true)} />
                 </>
               ) : isFound ? (
                 <>
@@ -333,8 +354,8 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     spans={lost.spans}
                     autoFocus
                   />
-                  <ChipRow parsed={lost} />
-                  <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} />
+                  <ChipRow parsed={lost} onApply={addWord(setLostText)} />
+                  <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} noLocation={noLocation} onNoLocation={() => setNoLocation(true)} />
                 </>
               )}
 

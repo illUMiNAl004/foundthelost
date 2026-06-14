@@ -14,6 +14,7 @@
 //      can never cross the threshold on their own.
 // ───────────────────────────────────────────────────────────────────────────
 import { parseDescription } from './extract.js'
+import { COLOR_NEIGHBORS } from '../data/dictionary.js'
 
 export const WEIGHTS = { semantic: 0.45, attributes: 0.2, location: 0.2, time: 0.15 }
 export const MATCH_THRESHOLD = 55
@@ -85,11 +86,16 @@ export function featurize(item, coordsOverride) {
   const itemSpans = p.spans.filter((s) => s.type === 'item')
   const itemId = itemSpans[0]?.payload.id || null
   const colorIds = new Set(p.spans.filter((s) => s.type === 'color').map((s) => s.payload.id))
-  const tokens = new Set([...(itemId ? [itemId] : []), ...p.unknownTokens])
+  const materialIds = new Set(p.spans.filter((s) => s.type === 'material').map((s) => s.payload.id))
+  const brandId = p.spans.find((s) => s.type === 'brand')?.payload.id || null
+  // distinctive words drive semantic overlap: item identity + materials + free words
+  const tokens = new Set([...(itemId ? [itemId] : []), ...materialIds, ...p.unknownTokens])
   return {
     itemId,
     category: item.category || itemSpans[0]?.payload.category || 'other',
     colorIds,
+    materialIds,
+    brandId,
     tokens,
     coords: coordsOverride || item.coords || p.coords || null,
     timeH: hoursAgo(item.time || ''),
@@ -97,21 +103,31 @@ export function featurize(item, coordsOverride) {
 }
 
 function semantic(a, b) {
-  // strongest signal: canonical item identity agreement
   let s = 0
   if (a.itemId && b.itemId) s = a.itemId === b.itemId ? 0.9 : 0.05
-  // descriptive overlap (distinctive words: "mountain", "sticker", "scratch", …)
   return Math.min(1, Math.max(s, jaccard(a.tokens, b.tokens)))
 }
 
-function attributes(a, b) {
-  let s = (a.category && b.category && a.category === b.category) ? 0.6 : 0
-  if (a.colorIds.size && b.colorIds.size) {
-    const shared = [...a.colorIds].some((c) => b.colorIds.has(c))
-    s += shared ? 0.4 : 0
-  } else {
-    s += 0.2 // unknown color → neutral
+// Graded color compatibility (replaces the old hard any-different gate):
+//   exact/shared canonical → strong, no penalty
+//   neighbor (e.g. black↔navy) → weak match shown, composite penalised
+//   incompatible (e.g. black↔white) → GATE (different object, not shown)
+//   either side unknown → neutral
+function colorCompat(a, b) {
+  if (!a.size || !b.size) return { gate: false, attr: 0.2, penalty: 1 }
+  let exact = false, neighbor = false
+  for (const x of a) for (const y of b) {
+    if (x === y) exact = true
+    else if ((COLOR_NEIGHBORS[x] || []).includes(y) || (COLOR_NEIGHBORS[y] || []).includes(x)) neighbor = true
   }
+  if (exact) return { gate: false, attr: 0.4, penalty: 1 }
+  if (neighbor) return { gate: false, attr: 0.1, penalty: 0.78 } // weak match
+  return { gate: true } // incompatible
+}
+
+function attributes(a, b, colorAttr) {
+  let s = (a.category && b.category && a.category === b.category) ? 0.6 : 0
+  s += colorAttr
   return Math.min(1, s)
 }
 
@@ -125,25 +141,26 @@ export function scorePair(lost, found) {
 
   const gateOut = (reason) => ({ score: 0, gated: true, reason, breakdown: { semantic: 0, attributes: 0, location: 0, time: 0, meters: Math.round(metersBetween(L.coords, F.coords)) } })
 
-  // BLOCKING / MUST-MATCH: two known, different item types can't be the same object.
+  // BLOCKING / MUST-MATCH gates: a known difference means a different object.
   if (L.itemId && F.itemId && L.itemId !== F.itemId) return gateOut('item')
-
-  // COLOR MUST-MATCH: if both sides state a color and they don't share one, it's a
-  // different object — a black case is not a white case. (One side unknown → no gate.)
-  if (L.colorIds.size && F.colorIds.size && ![...L.colorIds].some((c) => F.colorIds.has(c))) {
-    return gateOut('color')
-  }
+  // brand: if both reports name a brand and they differ → different object.
+  if (L.brandId && F.brandId && L.brandId !== F.brandId) return gateOut('brand')
+  const cc = colorCompat(L.colorIds, F.colorIds)
+  if (cc.gate) return gateOut('color')
 
   const sem = semantic(L, F)
-  const attr = attributes(L, F)
+  const attr = attributes(L, F, cc.attr)
   const meters = metersBetween(L.coords, F.coords)
   const loc = locationScore(meters)
   const time = timeScore(L.timeH, F.timeH)
 
   let composite = WEIGHTS.semantic * sem + WEIGHTS.attributes * attr + WEIGHTS.location * loc + WEIGHTS.time * time
-  // SEMANTIC FLOOR: without real descriptive/identity agreement, cap below threshold so
-  // place+time+category alone can't manufacture a match.
+  // SEMANTIC FLOOR: without real descriptive/identity agreement, cap below threshold.
   if (sem < SEM_FLOOR) composite = Math.min(composite, 0.5)
+  // soft penalties — a weaker but real match still surfaces, just lower:
+  composite *= cc.penalty // neighbor colour (black↔navy) pulls the score down
+  if (L.materialIds.size && F.materialIds.size && ![...L.materialIds].some((m) => F.materialIds.has(m))) composite *= 0.9
+  if (L.brandId && F.brandId && L.brandId === F.brandId) composite = Math.min(1, composite + 0.05) // brand agreement boost
 
   return {
     score: Math.round(composite * 100),

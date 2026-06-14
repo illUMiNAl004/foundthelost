@@ -9,6 +9,8 @@ export const TYPE_STYLE = {
   place: { mark: 'bg-sky-400/40', chip: 'bg-sky-400/20 text-sky-700 dark:text-sky-300 border-sky-400/40', label: 'Location' },
   item: { mark: 'bg-lime/50', chip: 'bg-lime/30 text-ink dark:text-lime border-lime/50', label: 'Item' },
   color: { mark: 'bg-fuchsia-300/50', chip: 'bg-fuchsia-300/25 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-300/50', label: 'Color' },
+  brand: { mark: 'bg-indigo-300/50', chip: 'bg-indigo-300/25 text-indigo-700 dark:text-indigo-300 border-indigo-300/50', label: 'Brand' },
+  material: { mark: 'bg-teal-300/50', chip: 'bg-teal-300/25 text-teal-700 dark:text-teal-300 border-teal-300/50', label: 'Material' },
   time: { mark: 'bg-amber-300/55', chip: 'bg-amber-300/25 text-amber-700 dark:text-amber-300 border-amber-300/50', label: 'Time' },
   qualifier: { mark: 'bg-slate-300/50', chip: 'bg-slate-400/15 text-slate-600 dark:text-slate-300 border-slate-400/30', label: 'Detail' },
 }
