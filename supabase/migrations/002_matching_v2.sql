@@ -267,6 +267,11 @@ begin
       continue;
     end if;
 
+    -- COLOR MUST-MATCH: both sides state a color but share none → different object.
+    if cardinality(my_colors) > 0 and cardinality(r_colors) > 0 and not (my_colors && r_colors) then
+      continue;
+    end if;
+
     -- SEMANTIC: canonical identity agreement dominates; else trigram text overlap
     -- approximates the JS distinctive-word Jaccard.
     if my_item is not null and r_item is not null and my_item = r_item then

@@ -123,9 +123,15 @@ export function scorePair(lost, found) {
   const L = featurize(lost, lost.lostAt || lost.coords)
   const F = featurize(found, found.coords)
 
+  const gateOut = (reason) => ({ score: 0, gated: true, reason, breakdown: { semantic: 0, attributes: 0, location: 0, time: 0, meters: Math.round(metersBetween(L.coords, F.coords)) } })
+
   // BLOCKING / MUST-MATCH: two known, different item types can't be the same object.
-  if (L.itemId && F.itemId && L.itemId !== F.itemId) {
-    return { score: 0, gated: true, breakdown: { semantic: 0, attributes: 0, location: 0, time: 0, meters: Math.round(metersBetween(L.coords, F.coords)) } }
+  if (L.itemId && F.itemId && L.itemId !== F.itemId) return gateOut('item')
+
+  // COLOR MUST-MATCH: if both sides state a color and they don't share one, it's a
+  // different object — a black case is not a white case. (One side unknown → no gate.)
+  if (L.colorIds.size && F.colorIds.size && ![...L.colorIds].some((c) => F.colorIds.has(c))) {
+    return gateOut('color')
   }
 
   const sem = semantic(L, F)

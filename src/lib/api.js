@@ -12,9 +12,10 @@ import { learnTerms, hydrateLearned } from './lexicon.js'
 function learnFromDraft(user, draft) {
   try {
     const tokens = parseDescription(`${draft.name || ''} ${draft.description || ''}`).unknownTokens
-    learnTerms(tokens)
+    const promoted = learnTerms(tokens)
     if (!useDemo(user) && supabase) tokens.forEach((t) => supabase.rpc('bump_lexicon', { p_term: t }).then(() => {}, () => {}))
-  } catch { /* non-fatal */ }
+    return promoted
+  } catch { return [] }
 }
 
 // Pull promoted terms from the shared lexicon into the local parser (live mode, once).
@@ -170,7 +171,7 @@ export async function getMyItems(user) {
 }
 
 export async function createItem(user, draft) {
-  learnFromDraft(user, draft)
+  const learned = learnFromDraft(user, draft)
   if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
@@ -199,7 +200,7 @@ export async function createItem(user, draft) {
       const [best] = findMatches([item], db.community || [])
       if (best) instantMatch = best
     }
-    return { item, instantMatch }
+    return { item, instantMatch, learned }
   }
 
   // ---- live ----
@@ -228,7 +229,7 @@ export async function createItem(user, draft) {
   // SECURITY DEFINER function to score this item against everyone else's privately.
   const { error: matchErr } = await supabase.rpc('match_item', { p_item_id: data.id })
   if (matchErr) console.warn('match_item rpc failed:', matchErr.message)
-  return { item: created, instantMatch: null }
+  return { item: created, instantMatch: null, learned }
 }
 
 /* ------------------------------------------------------------------ */

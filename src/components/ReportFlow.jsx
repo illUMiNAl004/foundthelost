@@ -5,6 +5,60 @@ import HighlightedInput, { TYPE_STYLE } from './HighlightedInput.jsx'
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
 
+// Brand prompts per item type — the more specific the report, the better the match.
+const BRANDS = {
+  earbuds: ['Apple', 'Samsung', 'Bose', 'Sony', 'Beats', 'JBL'],
+  headphones: ['Sony', 'Bose', 'Beats', 'JBL', 'Sennheiser', 'Apple'],
+  phone: ['Apple', 'Samsung', 'Google', 'OnePlus'],
+  laptop: ['Apple', 'Dell', 'HP', 'Lenovo', 'Asus'],
+  watch: ['Apple', 'Samsung', 'Fitbit', 'Garmin'],
+  water_bottle: ['Hydro Flask', 'Stanley', 'Owala', 'Yeti', 'Nalgene', 'Camelbak'],
+}
+const COLOR_OPTS = ['Black', 'White', 'Blue', 'Red', 'Green', 'Grey', 'Brown', 'Yellow', 'Purple', 'Pink']
+const wordPresent = (text, w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)
+
+// Suggestive follow-ups: only the questions that are still unanswered, as tap-to-add
+// chips. Tapping appends the word to the description so it re-parses, highlights, and
+// strengthens matching. Nothing is forced — every prompt is optional.
+function RefineDetails({ parsed, text, onAdd }) {
+  const itemSpan = parsed.spans.find((s) => s.type === 'item')
+  const itemId = itemSpan?.payload.id
+  if (!itemId) return null
+  const hasColor = parsed.spans.some((s) => s.type === 'color')
+  const brands = BRANDS[itemId]
+  const hasBrand = brands?.some((b) => wordPresent(text, b))
+  if (hasColor && (!brands || hasBrand)) return null
+
+  const Row = ({ label, opts }) => (
+    <div>
+      <p className="mb-1 font-mono text-[10.5px] font-bold uppercase tracking-[0.07em] text-slate-400">{label}?</p>
+      <div className="flex flex-wrap gap-1.5">
+        {opts.map((o) => (
+          <button
+            key={o}
+            onClick={() => onAdd(o)}
+            className="rounded-full border border-ink/15 bg-white/70 px-2.5 py-1 text-[12px] font-semibold transition hover:border-lime hover:bg-lime/20 dark:border-white/10 dark:bg-slate-800/60"
+          >
+            {o}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 8 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="mt-3 space-y-2.5 rounded-2xl border border-lime/30 bg-lime/[0.07] p-3"
+    >
+      <p className="text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">A couple details sharpen the match ✨</p>
+      {!hasColor && <Row label="Color" opts={COLOR_OPTS} />}
+      {brands && !hasBrand && <Row label="Brand" opts={brands} />}
+    </motion.div>
+  )
+}
+
 // color-coded keyword chips (showing the user's actual words) + a tiny legend
 function ChipRow({ parsed }) {
   const { chips, suggestions } = parsed
@@ -100,6 +154,9 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const isFound = mode === 'found'
   const lost = useMemo(() => parseDescription(lostText), [lostText])
   const found = useMemo(() => parseDescription(foundText), [foundText])
+
+  // append a detail word (from a follow-up chip) to the description if not already there
+  const addWord = (setter) => (w) => setter((prev) => (wordPresent(prev, w) ? prev : `${prev.trim()} ${w}`.trim()))
 
   const startScan = () => {
     setScanning(true)
@@ -200,6 +257,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     autoFocus
                   />
                   <ChipRow parsed={found} />
+                  <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} />
                 </>
               ) : isFound ? (
                 <>
@@ -276,6 +334,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     autoFocus
                   />
                   <ChipRow parsed={lost} />
+                  <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} />
                 </>
               )}
 

@@ -37,10 +37,12 @@ const CORRELATE_POOL = [
 
 /**
  * Record unrecognized terms from a real report. Recurring terms are promoted into the
- * dictionary; one-offs just accumulate. Returns true if the dictionary changed.
+ * dictionary; one-offs just accumulate. Returns the list of terms newly promoted this
+ * call: [{ alias, label, correlatedTo|null }] — used to surface "learned a new word".
  */
 export function learnTerms(tokens = []) {
   const s = load()
+  const promoted = []
   let changed = false
   for (const raw of tokens) {
     const t = String(raw).toLowerCase().trim()
@@ -52,16 +54,18 @@ export function learnTerms(tokens = []) {
       if (hit) {
         // strong correlation → new alias of an existing canonical
         s.learned.push({ type: hit.type, alias: t, canonicalId: hit.id, label: hit.label, category: hit.category || null })
+        promoted.push({ alias: t, label: cap(t), correlatedTo: hit.label })
       } else {
         // genuinely new → its own keyword (own canonical), category unknown → 'other'
         s.learned.push({ type: 'item', alias: t, canonicalId: `learned_${t.replace(/[^a-z0-9]+/g, '_')}`, label: cap(t), category: 'other' })
+        promoted.push({ alias: t, label: cap(t), correlatedTo: null })
       }
       delete s.pending[t]
     }
     changed = true
   }
   if (changed) { s.v++; persist() }
-  return changed
+  return promoted
 }
 
 /** Seed the in-memory lexicon from the server (live mode), e.g. at app start. */

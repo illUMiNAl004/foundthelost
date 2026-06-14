@@ -46,6 +46,7 @@ export default function App() {
   const [activeConv, setActiveConv] = useState(null) // conversation id to open in chat
   const [karma, setKarma] = useState(0)
   const [unread, setUnread] = useState(0)
+  const [toast, setToast] = useState(null) // { words: [...] } when the lexicon learns
   const mapApi = useRef(null)
   const startedRef = useRef(false)
   const pendingMatchRef = useRef(null)
@@ -124,10 +125,14 @@ export default function App() {
   }
   const handleReportSubmit = async (draft) => {
     try {
-      const { instantMatch } = await createItem(user, draft)
+      const { instantMatch, learned } = await createItem(user, draft)
       refresh()
       // hold any instant match until the user closes the success screen
       pendingMatchRef.current = instantMatch || null
+      if (learned?.length) {
+        setToast({ words: learned.map((l) => l.label) })
+        setTimeout(() => setToast(null), 5000)
+      }
     } catch (e) {
       console.error('createItem failed:', e)
       alert(`Could not save your report:\n${e.message || e}`)
@@ -242,6 +247,28 @@ export default function App() {
       {/* intro loader */}
       <AnimatePresence>
         {phase === 'loader' && <IntroLoader onDone={handleLoaderDone} />}
+      </AnimatePresence>
+
+      {/* self-learning toast: the dictionary just grew from a real report */}
+      <AnimatePresence>
+        {toast && (
+          <motion.div
+            key="learn-toast"
+            initial={{ opacity: 0, y: 24, scale: 0.96 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 24, scale: 0.96 }}
+            transition={{ type: 'spring', stiffness: 320, damping: 26 }}
+            className="glass glass-shadow pointer-events-auto fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-full px-4 py-2.5"
+          >
+            <span className="text-[15px]">✨</span>
+            <span className="text-[13.5px] font-semibold">
+              Learned a new word: {toast.words.map((w) => (
+                <span key={w} className="font-mono text-lime-700 dark:text-lime">{w}</span>
+              )).reduce((prev, curr) => [prev, ', ', curr])}
+            </span>
+            <span className="mono-label !text-[10px]">added to the dictionary</span>
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   )
