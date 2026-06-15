@@ -81,6 +81,42 @@ const FUZZY_POOL = [
 ].filter((c) => c.value.length >= 4)
 
 /**
+ * Best-effort timestamp for WHEN the item was lost/found, parsed from the free text.
+ * Returns an ISO string or null (caller falls back to now()). Approximate by design —
+ * the matcher only needs a plausible window, not an exact instant.
+ */
+export function inferOccurredAt(text = '', now = new Date()) {
+  const t = text.toLowerCase()
+  const at = (base, h, m = 0) => { const x = new Date(base); x.setHours(h, m, 0, 0); return x }
+  const DAY = 864e5
+
+  const clock = t.match(/\b(\d{1,2})(?::(\d{2}))?\s*(am|pm)\b/)
+  if (clock) {
+    let h = (+clock[1]) % 12
+    if (clock[3] === 'pm') h += 12
+    let d = at(now, h, clock[2] ? +clock[2] : 0)
+    if (/yesterday|last night/.test(t)) d = new Date(d.getTime() - DAY)
+    else if (d > now) d = new Date(d.getTime() - DAY) // a clock time later "today" → it was yesterday
+    return d.toISOString()
+  }
+  const rel = t.match(/\b(\d+)\s*(m|min|mins|h|hr|hrs|hour|hours|d|day|days)\s*ago\b/)
+  if (rel) {
+    const n = +rel[1], u = rel[2][0]
+    return new Date(now.getTime() - (u === 'm' ? n * 6e4 : u === 'h' ? n * 36e5 : n * DAY)).toISOString()
+  }
+  if (/last night/.test(t)) return at(new Date(now.getTime() - DAY), 22).toISOString()
+  if (/yesterday/.test(t)) return at(new Date(now.getTime() - DAY), 15).toISOString()
+  if (/tonight/.test(t)) return at(now, 20).toISOString()
+  if (/this morning|morning/.test(t)) return at(now, 9).toISOString()
+  if (/noon|midday/.test(t)) return at(now, 12).toISOString()
+  if (/this afternoon|afternoon/.test(t)) return at(now, 14).toISOString()
+  if (/this evening|evening/.test(t)) return at(now, 18).toISOString()
+  if (/late night|midnight|\bnight\b/.test(t)) return at(now, 22).toISOString()
+  if (/just now|today|right now/.test(t)) return now.toISOString()
+  return null
+}
+
+/**
  * Annotate free text → non-overlapping, positioned spans:
  *   [{ type:'place'|'item'|'color'|'material'|'brand'|'time', start, end, text, payload }]
  * Longest aliases claim their characters first; shorter/overlapping ones are skipped.
@@ -192,6 +228,7 @@ export function parseDescription(text = '') {
     brand: !brandSpan,
     material: !materialSpan,
     location: !place && !loc.vague, // unknown but not explicitly "idk"
+    time: !timeSpan,
   }
 
   return {

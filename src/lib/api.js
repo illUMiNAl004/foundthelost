@@ -220,6 +220,7 @@ export async function createItem(user, draft) {
       lng: coords[0],
       lat: coords[1],
       sensitive: !!draft.sensitive,
+      occurred_at: draft.occurredAt || new Date().toISOString(),
     })
     .select()
     .single()
