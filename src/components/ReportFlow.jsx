@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { parseDescription } from '../lib/extract.js'
+import { parseDescription, inferOccurredAt } from '../lib/extract.js'
 import { BRANDS_FOR, MATERIALS_FOR } from '../data/dictionary.js'
 import HighlightedInput, { TYPE_STYLE } from './HighlightedInput.jsx'
 
@@ -9,6 +9,8 @@ const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
 const COLOR_OPTS = ['Black', 'White', 'Blue', 'Navy', 'Red', 'Green', 'Grey', 'Brown', 'Yellow', 'Purple', 'Pink']
 // Top high-traffic places offered when location is missing (all parse back to a pin).
 const WHERE_OPTS = ['Du Bois Library', 'Berkshire', 'Worcester', 'Student Union', 'Campus Center', 'ILC', 'Rec Center']
+// When-it-happened prompts (each parses to a real occurred_at via inferOccurredAt).
+const WHEN_OPTS = ['Just now', 'This morning', 'This afternoon', 'This evening', 'Last night', 'Yesterday']
 const wordPresent = (text, w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(text)
 
 // The "completeness coach": a friendly, conversational set of follow-ups that asks ONLY
@@ -26,10 +28,11 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
   // what to ask, in priority order
   const askWhich = parsed.ambiguousPlace && !noLocation
   const askWhere = parsed.missing.location && !parsed.ambiguousPlace && !noLocation && text.trim().length > 3
+  const askWhen = itemId && parsed.missing.time
   const askColor = itemId && parsed.missing.color
   const askBrand = brands && !hasBrand
   const askMaterial = materials && !hasMaterial
-  if (!askWhich && !askWhere && !askColor && !askBrand && !askMaterial) return null
+  if (!askWhich && !askWhere && !askWhen && !askColor && !askBrand && !askMaterial) return null
 
   const Chip = ({ label, onClick, accent }) => (
     <button
@@ -69,6 +72,7 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
           <Chip label="I'm not sure" accent onClick={onNoLocation} />
         </Row>
       )}
+      {askWhen && <Row label="when?">{WHEN_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askColor && <Row label="color?">{COLOR_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askBrand && <Row label="brand?">{brands.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askMaterial && <Row label="material?">{materials.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
@@ -430,6 +434,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         status: 'still searching',
                         building: lost.place || 'On campus',
                         coords: lost.coords,
+                        occurredAt: inferOccurredAt(lostText),
                       })
                     }
                     setStep(isFound ? 2 : totalSteps)
@@ -473,6 +478,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         status: opt.status,
                         building: fromText ? (found.place || 'On campus') : 'Berkshire Dining Commons',
                         coords: fromText ? found.coords : null,
+                        occurredAt: fromText ? inferOccurredAt(foundText) : null,
                       })
                       setStep(3)
                     }}
