@@ -5,14 +5,14 @@ import { useAuth } from '../hooks/useAuth.jsx'
 const SPRING = { type: 'spring', stiffness: 320, damping: 30 }
 
 export default function AuthGate({ onDone }) {
-  const { isLive, signIn, signUp, signInDemo } = useAuth()
-  const [mode, setMode] = useState('signin') // 'signin' | 'signup'
+  const { isLive, signIn, signUp, signInDemo, requestPasswordReset } = useAuth()
+  const [mode, setMode] = useState('signin') // 'signin' | 'signup' | 'forgot'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const [sent, setSent] = useState(false)
+  const [sent, setSent] = useState(false) // false | 'signup' | 'reset'
 
   const submit = async (e) => {
     e.preventDefault()
@@ -22,9 +22,12 @@ export default function AuthGate({ onDone }) {
       if (mode === 'signin') {
         await signIn(email, password)
         onDone()
+      } else if (mode === 'forgot') {
+        await requestPasswordReset(email)
+        setSent('reset')
       } else {
         await signUp(name, email, password)
-        setSent(true)
+        setSent('signup')
       }
     } catch (err) {
       setError(err.message)
@@ -80,7 +83,9 @@ export default function AuthGate({ onDone }) {
             <div className="text-4xl">📬</div>
             <h2 className="font-display mt-3 text-xl font-bold">Check your inbox</h2>
             <p className="mt-2 text-[14px] text-slate-500">
-              We sent a confirmation link to <b>{email}</b>. Confirm, then sign in.
+              {sent === 'reset'
+                ? <>We sent a password-reset link to <b>{email}</b>. Open it to set a new password.</>
+                : <>We sent a confirmation link to <b>{email}</b>. Confirm, then sign in.</>}
             </p>
             <button
               onClick={() => { setSent(false); setMode('signin') }}
@@ -91,6 +96,11 @@ export default function AuthGate({ onDone }) {
           </motion.div>
         ) : (
           <form onSubmit={submit} className="glass glass-shadow space-y-3 rounded-3xl p-6">
+            {mode === 'forgot' && (
+              <p className="text-[13px] text-slate-500 dark:text-slate-400">
+                Enter your UMass email and we'll send a link to reset your password.
+              </p>
+            )}
             {mode === 'signup' && (
               <input className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
             )}
@@ -102,14 +112,25 @@ export default function AuthGate({ onDone }) {
               onChange={(e) => setEmail(e.target.value)}
               required
             />
-            <input
-              className={field}
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
+            {mode !== 'forgot' && (
+              <input
+                className={field}
+                type="password"
+                placeholder="Password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            )}
+            {mode === 'signin' && (
+              <button
+                type="button"
+                onClick={() => { setMode('forgot'); setError('') }}
+                className="block w-full text-right text-[12.5px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
+              >
+                Forgot password?
+              </button>
+            )}
             {error && (
               <motion.div
                 initial={{ opacity: 0, y: -6 }}
@@ -124,14 +145,14 @@ export default function AuthGate({ onDone }) {
               disabled={busy}
               className="btn-lime w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] disabled:opacity-50"
             >
-              {busy ? '…' : mode === 'signin' ? 'sign in' : 'create account'}
+              {busy ? '…' : mode === 'signin' ? 'sign in' : mode === 'forgot' ? 'send reset link' : 'create account'}
             </motion.button>
             <button
               type="button"
               onClick={() => { setMode((m) => (m === 'signin' ? 'signup' : 'signin')); setError('') }}
               className="w-full py-1 text-center text-[13px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
             >
-              {mode === 'signin' ? "New here? Create an account" : 'Already have an account? Sign in'}
+              {mode === 'signin' ? 'New here? Create an account' : mode === 'forgot' ? '← Back to sign in' : 'Already have an account? Sign in'}
             </button>
 
             {/* demo only exists in local dev (no Supabase). Never on the live site. */}
