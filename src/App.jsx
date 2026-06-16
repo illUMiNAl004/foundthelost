@@ -7,6 +7,7 @@ import BottomSheet from './components/BottomSheet.jsx'
 import ReportFlow from './components/ReportFlow.jsx'
 import IntroLoader from './components/IntroLoader.jsx'
 import AuthGate from './components/AuthGate.jsx'
+import ResetPassword from './components/ResetPassword.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import LeaderboardPanel from './components/LeaderboardPanel.jsx'
 import { useAuth } from './hooks/useAuth.jsx'
@@ -34,7 +35,7 @@ function RecoveryTicker() {
 }
 
 export default function App() {
-  const { user, loading } = useAuth()
+  const { user, loading, recovery } = useAuth()
   const [phase, setPhase] = useState('loader') // 'loader' | 'auth' | 'globe' | 'ready'
   const [dark, setDark] = useState(false)
   const [filter, setFilter] = useState('all')
@@ -242,6 +243,11 @@ export default function App() {
       {/* auth gate */}
       <AnimatePresence>
         {showGate && <AuthGate key="gate" onDone={proceedToMap} />}
+      </AnimatePresence>
+
+      {/* password reset (arrived via the reset-email link) — sits above everything */}
+      <AnimatePresence>
+        {recovery && <ResetPassword key="reset" />}
       </AnimatePresence>
 
       {/* intro loader */}

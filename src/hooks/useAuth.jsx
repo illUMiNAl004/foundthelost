@@ -26,6 +26,7 @@ function friendly(e) {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [recovery, setRecovery] = useState(false) // true while completing a password reset
 
   useEffect(() => {
     if (!isLive) {
@@ -49,7 +50,10 @@ export function AuthProvider({ children }) {
 
     const t = setTimeout(finish, 4000) // hard fallback so the UI never hangs
 
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, session) => {
+      // clicking the reset-email link signs the user in with a temporary recovery
+      // session and fires PASSWORD_RECOVERY → show the "set a new password" screen.
+      if (event === 'PASSWORD_RECOVERY') setRecovery(true)
       setUser(session?.user ? toUser(session.user) : null)
     })
     return () => { clearTimeout(t); sub.subscription.unsubscribe() }
@@ -78,6 +82,30 @@ export function AuthProvider({ children }) {
     }
   }
 
+  // email a password-reset link; the link returns to the app in recovery mode.
+  const requestPasswordReset = async (email) => {
+    if (!UMASS_EMAIL.test(email)) throw new Error('Use your @umass.edu email')
+    if (!isLive) throw new Error('No database connected — use demo mode below')
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.origin })
+      if (error) throw error
+    } catch (e) {
+      throw new Error(friendly(e))
+    }
+  }
+
+  // set a new password during recovery, then leave recovery mode (now signed in).
+  const updatePassword = async (password) => {
+    if (password.length < 8) throw new Error('Password needs 8+ characters')
+    try {
+      const { error } = await supabase.auth.updateUser({ password })
+      if (error) throw error
+      setRecovery(false)
+    } catch (e) {
+      throw new Error(friendly(e))
+    }
+  }
+
   const signInDemo = () => {
     const demo = { id: 'demo-user', email: 'you@umass.edu', name: 'Tanishq', demo: true }
     localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demo))
@@ -91,7 +119,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, isLive, signIn, signUp, signInDemo, signOut }}>
+    <AuthContext.Provider value={{ user, loading, isLive, recovery, signIn, signUp, signInDemo, signOut, requestPasswordReset, updatePassword }}>
       {children}
     </AuthContext.Provider>
   )
