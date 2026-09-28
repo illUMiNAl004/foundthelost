@@ -113,3 +113,163 @@ and `src/lib/matching.js` (lexicon localStorage calls are try/caught → node-sa
 PR **#5** (branch `claude/found-lost-matching-overview-4v7ig6`) → `main`. Conflicts
 resolved (main had the older first-pass via PR #4; branch keeps the full rewrite).
 Build green. Ready to merge.
+
+---
+
+# Addendum — Sept 2026: connectors hardened, Snap & Fill vision, waitlist
+
+> Branch `feature/vision-waitlist`. Everything below is on top of the parsing/matching
+> overhaul described above. Migrations 004–006 are new; 001–003 unchanged (except 002 is
+> now re-runnable).
+
+## A. Connector audit (what was actually broken in live mode)
+Baseline run of the DB suite against 001–003: **19 of 57 checks failed.** Confirmed bugs, all
+fixed in `004_connector_fixes.sql` + `src/lib/api.js`:
+1. Any user could `update profiles set karma = 99999` on themselves → column-level grant
+   (name/avatar only) + `karma_events` ledger; +25 per found report (cap 5/24h), +50 on return.
+2. Anyone could open a conversation with anyone → insert requires the two owners of a real
+   match (`is_match_pair`), unique per match.
+3. `touch_conversation` ran under RLS with no update policy → `last_message_at` never moved →
+   now `security definer`.
+4. No way to set `read_at`; `markConversationRead` checked `!isLive` → `mark_conversation_read`
+   RPC + live unread counts.
+5. `messages` not in `supabase_realtime` → added; `subscribeToMessages()` in api.js, ChatPanel
+   is live.
+6. "Mark as returned" was local UI state (and leaked across items) → `mark_returned(match_id)`
+   RPC closes both items + competing matches, +50 to the finder once.
+7. Lexicon poisoning (one user repeating a word promoted it globally; junk accepted) → promote
+   only when 2 *different* students use it, junk filter, 200/day budget.
+8. Parser: dorm display names ("Brown", "Field", "Oak") bypassed `AMBIGUOUS_DORM` →
+   `extract.js` only uses a dorm's safe aliases. "Brown leather wallet" keeps its colour now.
+9. anon `select items` errored (`permission denied for function item_visible_to_me`) → read
+   policies scoped `to authenticated`.
+10. Demo matches had no `matchId` → a new conversation on every tap.
+
+Suite after fixes: **73/73**. JS↔SQL parity: identical match/no-match decisions; two pairs
+differ by ≤4 points (known trigram-vs-Jaccard approximation when no item word is known).
+
+Harness: `scripts/db-test/` (`run.sh` applies shim + every migration twice + `tests.sql`;
+`parity.mjs` compares `scorePair` vs `match_item`). Needs a local Postgres 15+.
+
+## B. Snap & Fill — real vision
+```
+SnapFill.jsx ── compressImage (≤1024px JPEG, EXIF-rotated) ─┐
+             ── extractGps (EXIF) → nearestPlace()          │  src/lib/vision.js
+             ── currentPosition() fallback                    │
+                                                              ▼
+                              POST /api/vision  { image: base64, mime }
+                                        │  netlify/functions/vision.mjs
+                                        │  (verifies Supabase bearer token when live)
+                                        ▼
+                         lib/vision-core.js  analyzeImage()
+                           ├─ OpenRouter  google/gemma-4-31b-it   (OPENROUTER_API_KEY)
+                           └─ Gemini API  gemma-4-31b-it          (GEMINI_API_KEY)
+                           prompt = strict JSON constrained to src/data/dictionary.js ids
+                           normalize() → enums validated; toDescription() → one sentence
+                                        ▼
+ReportFlow: foundText = description → parseDescription() → SAME chips/title/matching
+            draft += { attributes: { vision }, photo: Blob, coords, sensitive }
+api.createItem: insert → upload <uid>/<itemId>.jpg to bucket item-photos → set photo_url
+```
+Design decisions:
+- **Vocabulary-constrained output.** The model must pick from the app's canonical item/colour/
+  material/brand ids, so photo reports need no new taxonomy and score exactly like typed ones
+  (verified: photo-found AirPods ↔ typed-lost AirPods = 86, headphones decoy gated).
+- **Photo → sentence → parser**, not photo → fields directly. Users can correct the sentence
+  in the highlighted box; everything downstream stays one code path.
+- Dev: `vite.config.js` mounts the same `handleVision` at `/api/vision` (reads `.env.local`
+  via `loadEnv(mode, cwd, '')`). Prod: Netlify Function v2 (`config.path = '/api/vision'`).
+- Cost guard: GET `/api/vision` reports `{configured}`; POST requires a valid Supabase session
+  when Supabase is configured; images >6MB rejected; upstream 4xx surfaces as 502 (our config).
+- Privacy: prompt forbids transcribing ID/card numbers or full names; `sensitive` is forced
+  true for ucard/card/keys regardless of model output.
+
+**Provider findings (Sept 27, 2026, measured with a real key):**
+- **Google AI Studio (Gemini API) is the $0 route that works.** `gemma-4-26b-a4b-it` answers in
+  ~3.5s **only with `generationConfig.thinkingConfig.thinkingLevel = 'minimal'`** — by default Gemma 4
+  thinks for 600–1000 tokens (17–25s) and at `maxOutputTokens: 600` never reaches the answer
+  (`finishReason: MAX_TOKENS`, empty text). `thinkingBudget` and `thinkingLevel: 'low'` are rejected
+  (400). Thought parts come back flagged `thought: true` and are filtered out. `gemma-4-31b-it`
+  returned `500 Internal error` on every image request → kept only as fallback. Gemma 3 ids are gone
+  from the API (404).
+- **OpenRouter free Gemma (`:free`)** is proxied to Google's *shared* AI Studio pool → persistent
+  `429 temporarily rate-limited upstream`. Paid OpenRouter works but needs credits; a key created
+  with credit limit 0 gets `403 Key limit exceeded`. OpenRouter path sends `reasoning: {effort:'none'}`.
+- `VISION_PROVIDER=gemini|openrouter` forces a provider; `VISION_MODEL` applies only to the provider
+  whose id format it matches (slug with `/` → OpenRouter, bare id → Gemini).
+- **Time budget:** 8s per model call (`AbortSignal.timeout`), 9.5s overall; rotation/retry only if
+  ≥2.5s remain. Netlify sync functions are cut around 10s, so a slow answer degrades to
+  "took too long — type it out" instead of a hung request.
+
+Open items: no rate limit per user (add a `vision_calls` ledger like karma if abused); AI Studio
+free quota is per-key (watch the dashboard once real students use it).
+
+## C. Waitlist (hype phase)
+- `VITE_WAITLIST` (default **on**): loader → `Waitlist.jsx` (cream, floating stickers,
+  no map mounted → no tile download) → *sign in* → AuthGate → globe intro → app. A restored
+  session skips straight to the globe. `off` restores the original flow.
+- **Copy is deliberately vague** (no "AI", "map", "matching", no landing-page link): the promise
+  ("lost things are about to start finding their way home") + the incentive, nothing else.
+- **Why join — the mechanics** (`src/lib/waitlist.js` constants):
+  - `FOUNDING_CAP = 500` → founding member: badge, karma head start at launch, entry into the
+    launch giveaway (`GIVEAWAY` in `Waitlist.jsx`, currently "AirPods Pro").
+  - `MILESTONES` by referrals: 1 jump the line · 3 day-one access · 5 founder badge · 10 = 5×
+    giveaway entries. Rank = referrals desc, created_at asc, so every campus friend moves you up.
+  - Sticker game "what did you last lose?" → `waitlist_set_lost_item` → reveal "you + N others".
+    Anonymous demand data by item (`waitlist_stats.by_item`).
+  - ⚠️ **Giveaway = sweepstakes.** Free entry is fine, but post official rules (eligibility,
+    dates, odds, MA residency notes) before promoting it. Copy currently says "launch giveaway".
+- **Live counter**: `waitlist_stats` (one PII-free row: total, by_item, last_item) is kept by a
+  trigger and streamed over Realtime (`subscribeStats()` → +1 pulse + "someone who lost 🔑 just
+  joined" ticker). Polling fallback 45s. Demo mode simulates joins every 6–18s.
+- `006_waitlist.sql`: `waitlist` has RLS + **no policies**; doors are `join_waitlist`,
+  `waitlist_standing`, `waitlist_set_lost_item`, `waitlist_count` (definer, granted to anon).
+  Referral credit only when the *new* joiner is @umass.edu; 120 joins/min global throttle.
+  Known: `join_waitlist` on an existing email returns `existing: true` (membership inferable) —
+  acceptable for a campus list.
+- **Invite gate (`007_invite_gate.sql`)**: `app_settings.signup_mode` = `invite` (default) | `open`.
+  `handle_new_user` (the 001 trigger) now also requires `signup_allowed(email)`, i.e. a
+  `waitlist.approved_at` — enforced in the DB, unforgeable from the client. `useAuth.signUp`
+  pre-checks `signup_allowed` so refusals render as AuthGate's "Not off the list yet" card (with a
+  button back to the waitlist) instead of GoTrue's generic "Database error saving new user" (which
+  `friendly()` also maps to the invite message). Admin helpers `approve_waitlist`,
+  `approve_next_in_line`, `revoke_waitlist`, `set_signup_mode` are revoked from app roles — run
+  them from the SQL editor. Local dev shares the production DB, so approve your own email once.
+  `waitlist.activated_at` records when an approved person actually signed up.
+- Honouring perks at launch (not built): in the signup trigger, look up `waitlist` by email →
+  founding/milestones → seed `profiles.karma` + a `founder` flag. Pick giveaway winners with
+  `select email from waitlist where <eligible> order by random() limit 1`.
+- Not built: mailer (confirmation / launch email), admin export (`select email, referrals,
+  lost_item from waitlist order by referrals desc, created_at` from the SQL editor for now).
+- `public/landing.html` still explains the whole product and is reachable by URL during the hype
+  phase — decide whether to unpublish it until launch.
+
+## D. Found-flow QA round (Sept 27, first real-device test)
+Bugs found by Tanishq testing with real photos, all fixed and re-verified with Playwright on desktop
+(1280×820) and iPhone-14 viewport:
+- **Blank sheet on tapping a found item.** Root cause (DOM-dumped): `BottomSheet` swaps list ↔ detail
+  inside `AnimatePresence mode="wait"`; the exiting list contained `ItemCard`s with `layout` + `exit`
+  props (exit propagates into the exiting subtree) and the `layoutId` tab pill. After a tab switch the
+  list's exit never resolved → stuck at opacity 0, detail never mounted. Fix: tab bar lifted out of the
+  animated swap, `layout`/`exit` removed from `ItemCard`, `initial={false}`. Detail now also shows the
+  item photo (`ItemPhoto` → `getPhotoUrl`, signed URL / data URL).
+- **Photo preview cropped/stretched.** SnapFill box now takes the photo's own aspect ratio (capped at
+  46vh/360px) with `object-contain` over a blurred fill; the report card scrolls
+  (`max-h-[calc(100dvh-2rem)] overflow-y-auto`) instead of overflowing the screen.
+- **Pen → "Pencil case".** `pen`/`pencil` were aliases of `pencil_case`. New canonical `pen`
+  (dictionary + `008_pen_alias.sql`). `toDescription()` now uses the alias the model itself said
+  ("pen", not the canonical's first alias), skips multi-word "brand text" like "Soka University of
+  America" (kept as visible text), and pins/cards use the item emoji (🖊️) instead of the category's 🧸.
+- **Location UX.** New `PlacePicker` (searchable gazetteer: names, nicknames, dorms; ↑↓⏎; "use my
+  location" snaps to the nearest place ≤250m) + `MiniMap` (live MapLibre, draggable/tap-to-move pin)
+  replace the fake gradient on the confirm-spot step. The picker is also offered inline under the
+  "where?"/"which dining hall?" chips, including when the text says "somewhere"/"idk". An explicit pick
+  or dragged pin (`placeOverride` / `pinCoords`) overrides anything inferred from text/photo.
+- Vision: `VISION_BUDGET_MS` (Vite dev passes 25s; prod default 9.5s), output cap 1500 tokens (a
+  thought burst hit MAX_TOKENS at 700 once), Gemini model rotation 26B → 31B.
+
+## D2. Misc
+- `MapView` gained `introOnMount` (globe fly-in when the map mounts after sign-in).
+- Vite build now splits `maplibre` / `vendor` chunks.
+- `netlify.toml`: `functions = "netlify/functions"`, esbuild bundler, `/api/*` redirect.
+- `STATUS_STYLES` has `returned` / `recovered` / `closed`.

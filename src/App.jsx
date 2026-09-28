@@ -10,6 +10,8 @@ import AuthGate from './components/AuthGate.jsx'
 import ResetPassword from './components/ResetPassword.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import LeaderboardPanel from './components/LeaderboardPanel.jsx'
+import Waitlist from './components/Waitlist.jsx'
+import { WAITLIST_ON } from './lib/waitlist.js'
 import { useAuth } from './hooks/useAuth.jsx'
 import { getMyItems, createItem, getKarma, getConversations, openConversation } from './lib/api.js'
 
@@ -36,7 +38,7 @@ function RecoveryTicker() {
 
 export default function App() {
   const { user, loading, recovery } = useAuth()
-  const [phase, setPhase] = useState('loader') // 'loader' | 'auth' | 'globe' | 'ready'
+  const [phase, setPhase] = useState('loader') // 'loader' | 'waitlist' | 'auth' | 'globe' | 'ready'
   const [dark, setDark] = useState(false)
   const [filter, setFilter] = useState('all')
   const [query, setQuery] = useState('')
@@ -72,19 +74,27 @@ export default function App() {
   }, [user, refresh])
 
   /* ---------- phases ----------
-     Flow: loader → globe always flies to campus → then, if logged out, the auth
-     gate fades in over the campus view; if logged in, the top bar appears. */
+     Pre-launch (VITE_WAITLIST on, default): loader → waitlist on a plain cream screen
+     (no map tiles loaded). "sign in" → auth gate → globe flies to campus → app.
+     A restored session skips the waitlist entirely.
+     Launched (VITE_WAITLIST=off): loader → globe flies → auth gate over campus / app. */
   const proceedToMap = useCallback(() => {
     if (startedRef.current) return
     startedRef.current = true
     setPhase('globe')
-    mapApi.current?.startIntro()
+    mapApi.current?.startIntro() // no-op if the map isn't mounted yet → introOnMount takes over
   }, [])
 
   const handleLoaderDone = () => {
     if (phase !== 'loader') return
-    proceedToMap()
+    if (user || !WAITLIST_ON) proceedToMap()
+    else setPhase('waitlist')
   }
+
+  // session restored while the waitlist is showing (slow auth) → straight into the app
+  useEffect(() => {
+    if (phase === 'waitlist' && user) proceedToMap()
+  }, [phase, user, proceedToMap])
 
   /* ---------- interactions ---------- */
   const items = useMemo(() => {
@@ -148,18 +158,26 @@ export default function App() {
   }
 
   const ready = phase === 'ready' && !!user
-  const showGate = phase !== 'loader' && !loading && !user
+  const showGate = phase === 'auth' || (['globe', 'ready'].includes(phase) && !loading && !user)
+  // The map (1MB of tiles + WebGL) only mounts once someone is headed into the app —
+  // waitlist visitors never download it. Pre-warm during the loader when we already
+  // know a session exists (or the waitlist is off), exactly like before.
+  const mapMounted =
+    phase === 'globe' || phase === 'ready' || (phase === 'loader' && (!WAITLIST_ON || (!loading && !!user)))
 
   return (
     <div className="relative h-full w-full overflow-hidden bg-cream dark:bg-slate-950">
-      <MapView
-        items={items}
-        selectedId={selected?.id}
-        onSelect={handleSelect}
-        dark={dark}
-        mapApi={mapApi}
-        onIntroEnd={() => setPhase('ready')}
-      />
+      {mapMounted && (
+        <MapView
+          items={items}
+          selectedId={selected?.id}
+          onSelect={handleSelect}
+          dark={dark}
+          mapApi={mapApi}
+          onIntroEnd={() => setPhase('ready')}
+          introOnMount={phase !== 'loader'}
+        />
+      )}
 
       {/* soft vignette for legibility */}
       {ready && (
@@ -200,6 +218,7 @@ export default function App() {
           onBack={handleBack}
           onReport={setFlow}
           onMessage={handleMessageMatch}
+          onReturned={refresh}
         />
       )}
 
@@ -240,9 +259,20 @@ export default function App() {
         {panel === 'board' && <LeaderboardPanel key="board" onClose={() => setPanel(null)} />}
       </AnimatePresence>
 
+      {/* pre-launch waitlist (cream screen, sits under the loader so it slides up into view) */}
+      <AnimatePresence>
+        {phase === 'waitlist' && <Waitlist key="waitlist" onSignIn={() => setPhase('auth')} />}
+      </AnimatePresence>
+
       {/* auth gate */}
       <AnimatePresence>
-        {showGate && <AuthGate key="gate" onDone={proceedToMap} />}
+        {showGate && (
+          <AuthGate
+            key="gate"
+            onDone={proceedToMap}
+            onWaitlist={WAITLIST_ON ? () => { startedRef.current = false; setPhase('waitlist') } : undefined}
+          />
+        )}
       </AnimatePresence>
 
       {/* password reset (arrived via the reset-email link) — sits above everything */}

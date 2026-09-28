@@ -154,4 +154,7 @@ export const STATUS_STYLES = {
   'still searching': 'bg-coral/10 text-coral border-coral/25',
   'with you': 'bg-blue-500/10 text-blue-600 dark:text-blue-400 border-blue-500/20',
   'dropped off': 'bg-teal-500/10 text-teal-700 dark:text-teal-400 border-teal-500/20',
+  returned: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+  recovered: 'bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-500/20',
+  closed: 'bg-slate-500/10 text-slate-500 border-slate-500/20',
 }

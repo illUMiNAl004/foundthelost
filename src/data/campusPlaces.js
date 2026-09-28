@@ -214,3 +214,23 @@ export function searchPlaces(query, limit = 5) {
   }
   return scored.sort((a, b) => a.best - b.best).slice(0, limit).map((s) => s.p)
 }
+
+/**
+ * Nearest named place to a [lng, lat] point (e.g. from a photo's EXIF GPS or the
+ * browser's geolocation). Returns { place, meters } or null when nothing is within
+ * `maxMeters` — a photo taken off campus shouldn't snap to a dorm.
+ */
+export function nearestPlace(coords, maxMeters = 350) {
+  if (!coords || !Number.isFinite(coords[0]) || !Number.isFinite(coords[1])) return null
+  const [lng, lat] = coords
+  const cosLat = Math.cos((lat * Math.PI) / 180)
+  let best = null
+  for (const p of CAMPUS_PLACES) {
+    if (!p.coords) continue
+    const dx = (p.coords[0] - lng) * 111_320 * cosLat
+    const dy = (p.coords[1] - lat) * 110_540
+    const m = Math.hypot(dx, dy)
+    if (m <= maxMeters && (!best || m < best.meters)) best = { place: p, meters: Math.round(m) }
+  }
+  return best
+}

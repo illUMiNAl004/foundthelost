@@ -76,13 +76,16 @@ const KIND_COLORS = {
   sensitive: '#C4B5FD',
 }
 
-export default function MapView({ items, selectedId, onSelect, dark, mapApi, onIntroEnd }) {
+// `introOnMount`: play the globe fly-in as soon as tiles load. Used when the map is
+// mounted lazily (after the waitlist / sign-in), where startIntro() was called before
+// the map existed.
+export default function MapView({ items, selectedId, onSelect, dark, mapApi, onIntroEnd, introOnMount = false }) {
   const containerRef = useRef(null)
   const mapRef = useRef(null)
   const markersRef = useRef([])
   const routeBitsRef = useRef({ markers: [], timer: null })
   const loadedRef = useRef(false)
-  const pendingIntroRef = useRef(false)
+  const pendingIntroRef = useRef(introOnMount)
   const darkRef = useRef(dark)
 
   useEffect(() => {

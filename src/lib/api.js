@@ -38,6 +38,15 @@ const CATEGORY_EMOJI = {
   electronics: '🎧', wallets: '👛', keys: '🔑', bottles: '🧴', clothing: '🧥', other: '🧸',
 }
 
+// The specific item's emoji (🖊️ for a pen, 🧮 for a calculator) beats the category's 🧸.
+function emojiFor(name, description, category) {
+  try {
+    const item = parseDescription(`${name || ''} ${description || ''}`).spans.find((s) => s.type === 'item')
+    if (item?.payload?.emoji) return item.payload.emoji
+  } catch { /* parser is best-effort here */ }
+  return CATEGORY_EMOJI[category] || '🧸'
+}
+
 /* ------------------------------------------------------------------ */
 /* demo store                                                           */
 /* ------------------------------------------------------------------ */
@@ -105,14 +114,24 @@ export function resetDemo() {
 /* items + matching                                                     */
 /* ------------------------------------------------------------------ */
 
+// "just now" / "3h ago" / "2d ago" — the same shape hoursAgo() parses, so demo
+// matching sees the real occurrence time instead of a frozen label.
+function relTime(iso) {
+  const h = (Date.now() - new Date(iso).getTime()) / 3600_000
+  if (!Number.isFinite(h) || h < 0.25) return 'just now'
+  if (h < 1) return `${Math.round(h * 60)}m ago`
+  if (h < 48) return `${Math.round(h)}h ago`
+  return `${Math.round(h / 24)}d ago`
+}
+
 function rowToUiItem(row) {
   return {
     id: row.id,
     kind: row.kind,
-    emoji: CATEGORY_EMOJI[row.category] || '🧸',
+    emoji: row.attributes?.vision?.emoji || emojiFor(row.name, row.description, row.category),
     name: row.name,
     place: row.building || 'On campus',
-    time: new Date(row.created_at).toLocaleDateString(),
+    time: relTime(row.occurred_at || row.created_at),
     category: row.category,
     status: row.status,
     match: null,
@@ -120,13 +139,16 @@ function rowToUiItem(row) {
     fresh: Date.now() - new Date(row.created_at).getTime() < 6 * 3600_000,
     sensitive: row.sensitive,
     details: row.description || '',
+    photoPath: row.photo_url || null, // storage path; resolve with getPhotoUrl()
+    attributes: row.attributes || {},
   }
 }
 
 export async function getMyItems(user) {
   if (useDemo(user)) {
     const db = loadDemo()
-    const mine = db.items
+    // real occurrence time → "3h ago", so the time signal isn't frozen at "just now"
+    const mine = db.items.map((it) => (it.occurredAt ? { ...it, time: relTime(it.occurredAt) } : it))
     const myLost = mine.filter((it) => it.kind === 'lost')
     const myFound = mine.filter((it) => it.kind === 'found')
 
@@ -170,18 +192,37 @@ export async function getMyItems(user) {
   return [...matchItems, ...mine.filter((it) => !(it.kind === 'lost' && matchedLostIds.has(it.id)))]
 }
 
+const PHOTO_BUCKET = 'item-photos'
+const DEMO_PHOTO_MAX = 350_000 // bytes — localStorage is ~5MB, keep demo photos small
+
+const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
+  const r = new FileReader()
+  r.onload = () => resolve(r.result)
+  r.onerror = () => reject(r.error)
+  r.readAsDataURL(blob)
+})
+
+/**
+ * draft: { kind, name, category, description, status, building, coords, sensitive,
+ *          occurredAt?, attributes? ({ vision: {...} }), photo? (Blob, already compressed) }
+ */
 export async function createItem(user, draft) {
   const learned = learnFromDraft(user, draft)
   if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
+    let photoDataUrl = null
+    if (draft.photo && draft.photo.size <= DEMO_PHOTO_MAX) {
+      try { photoDataUrl = await blobToDataUrl(draft.photo) } catch { /* photo is optional */ }
+    }
     const item = {
       id: `u-${db.nextId++}`,
       kind: draft.kind,
-      emoji: CATEGORY_EMOJI[draft.category] || '🧸',
+      emoji: draft.attributes?.vision?.emoji || emojiFor(draft.name, draft.description, draft.category),
       name: draft.name,
       place: draft.building || 'On campus',
       time: 'just now',
+      occurredAt: draft.occurredAt || new Date().toISOString(),
       category: draft.category || 'other',
       status: draft.status,
       match: null,
@@ -189,15 +230,23 @@ export async function createItem(user, draft) {
       fresh: true,
       sensitive: !!draft.sensitive,
       details: draft.description || '',
+      attributes: draft.attributes || {},
+      photoDataUrl,
     }
     db.items = [item, ...db.items]
     if (draft.kind === 'found') db.karma += 25
-    saveDemo(db)
+    try {
+      saveDemo(db)
+    } catch {
+      // quota exceeded (photo too big for localStorage) → keep the report, drop the photo
+      item.photoDataUrl = null
+      saveDemo(db)
+    }
 
     // immediate-match check for instant gratification on a new lost report
     let instantMatch = null
     if (draft.kind === 'lost') {
-      const [best] = findMatches([item], db.community || [])
+      const [best] = findMatches([{ ...item, time: relTime(item.occurredAt) }], db.community || [])
       if (best) instantMatch = best
     }
     return { item, instantMatch, learned }
@@ -221,11 +270,31 @@ export async function createItem(user, draft) {
       lat: coords[1],
       sensitive: !!draft.sensitive,
       occurred_at: draft.occurredAt || new Date().toISOString(),
+      attributes: draft.attributes || {},
     })
     .select()
     .single()
   if (error) throw error
-  const created = rowToUiItem(data)
+
+  // Photo → private bucket at <owner>/<item>.jpg (the path shape the storage policies
+  // key on). Best-effort: a failed upload never loses the report itself.
+  let row = data
+  if (draft.photo) {
+    const ext = draft.photo.type === 'image/png' ? 'png' : draft.photo.type === 'image/webp' ? 'webp' : 'jpg'
+    const path = `${user.id}/${data.id}.${ext}`
+    const { error: upErr } = await supabase.storage
+      .from(PHOTO_BUCKET)
+      .upload(path, draft.photo, { contentType: draft.photo.type || 'image/jpeg', upsert: true })
+    if (upErr) console.warn('photo upload failed:', upErr.message)
+    else {
+      const { data: updated, error: updErr } = await supabase
+        .from('items').update({ photo_url: path }).eq('id', data.id).select().single()
+      if (updErr) console.warn('photo_url update failed:', updErr.message)
+      else row = updated
+    }
+  }
+
+  const created = rowToUiItem(row)
   // Matching runs SERVER-SIDE: clients can't write `matches` (RLS), so we ask the
   // SECURITY DEFINER function to score this item against everyone else's privately.
   const { error: matchErr } = await supabase.rpc('match_item', { p_item_id: data.id })
@@ -233,15 +302,74 @@ export async function createItem(user, draft) {
   return { item: created, instantMatch: null, learned }
 }
 
+/** Displayable URL for an item photo (short-lived signed URL in live mode). */
+export async function getPhotoUrl(user, item, expiresIn = 3600) {
+  if (!item) return null
+  if (useDemo(user)) return item.photoDataUrl || null
+  if (!item.photoPath) return null
+  const { data, error } = await supabase.storage.from(PHOTO_BUCKET).createSignedUrl(item.photoPath, expiresIn)
+  if (error) { console.warn('signed url failed:', error.message); return null }
+  return data.signedUrl
+}
+
+/**
+ * Mark an item as handed back. Pass a match item (owner side, has matchId) or one of
+ * my found items. Live: the server closes the match + both items and awards the
+ * finder +50 once (mark_returned). Returns { awarded, noMatch? }.
+ */
+export async function markReturned(user, item) {
+  if (useDemo(user)) {
+    const db = loadDemo()
+    const mine = db.items.find((it) => it.id === item.id)
+    if (mine && mine.status !== 'returned') {
+      mine.status = 'returned'
+      db.karma += 50
+      saveDemo(db)
+      return { awarded: true }
+    }
+    return { awarded: false }
+  }
+
+  let matchId = item.matchId
+  if (!matchId && item.kind === 'found') {
+    const { data: ms, error } = await supabase
+      .from('matches')
+      .select('id, score')
+      .eq('found_item_id', item.id)
+      .eq('status', 'pending')
+      .order('score', { ascending: false })
+      .limit(1)
+    if (error) throw error
+    matchId = ms?.[0]?.id
+  }
+  if (!matchId) {
+    // nobody has claimed it through a match yet → just close it, no karma
+    const { error } = await supabase.from('items').update({ status: 'returned' }).eq('id', item.id)
+    if (error) throw error
+    return { awarded: false, noMatch: true }
+  }
+  const { data, error } = await supabase.rpc('mark_returned', { p_match_id: matchId })
+  if (error) throw error
+  return { awarded: !!data?.awarded }
+}
+
 /* ------------------------------------------------------------------ */
 /* chat                                                                 */
 /* ------------------------------------------------------------------ */
+
+const clock = (iso) => new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+const toUiMessage = (user, m) => ({
+  id: m.id,
+  from: m.sender_id === user.id ? 'me' : 'them',
+  text: m.content,
+  time: clock(m.created_at),
+})
 
 export async function getConversations(user) {
   if (useDemo(user)) return loadDemo().conversations
   const { data, error } = await supabase
     .from('conversations')
-    .select('id, item_label, participant_a, participant_b, profiles_a:profiles!conversations_participant_a_fkey(name), profiles_b:profiles!conversations_participant_b_fkey(name), messages(id, sender_id, content, created_at)')
+    .select('id, match_id, item_label, participant_a, participant_b, profiles_a:profiles!conversations_participant_a_fkey(name), profiles_b:profiles!conversations_participant_b_fkey(name), messages(id, sender_id, content, created_at, read_at)')
     .or(`participant_a.eq.${user.id},participant_b.eq.${user.id}`)
     .order('last_message_at', { ascending: false })
   if (error) throw error
@@ -250,14 +378,11 @@ export async function getConversations(user) {
     const msgs = (c.messages || []).sort((a, b) => new Date(a.created_at) - new Date(b.created_at))
     return {
       id: c.id,
+      matchId: c.match_id,
       with: { name: otherName || 'Student', avatar: '🧑‍🎓' },
       item: c.item_label || '',
-      unread: 0,
-      messages: msgs.map((m) => ({
-        from: m.sender_id === user.id ? 'me' : 'them',
-        text: m.content,
-        time: new Date(m.created_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }),
-      })),
+      unread: msgs.filter((m) => m.sender_id !== user.id && !m.read_at).length,
+      messages: msgs.map((m) => toUiMessage(user, m)),
     }
   })
 }
@@ -269,11 +394,13 @@ export async function openConversation(user, matchItem, firstMessage) {
 
   if (useDemo(user)) {
     const db = loadDemo()
-    let conv = db.conversations.find((c) => c.matchId && c.matchId === matchItem.matchId)
+    // demo matches carry no matchId — key on the found item so re-opening reuses the chat
+    const key = matchItem.matchId || matchItem.id
+    let conv = db.conversations.find((c) => c.matchId === key)
     if (!conv) {
       conv = {
         id: `c-${db.nextId++}`,
-        matchId: matchItem.matchId || matchItem.id,
+        matchId: key,
         with: { name: 'Finder', avatar: '🧑‍🎓' },
         item: label,
         unread: 0,
@@ -282,19 +409,19 @@ export async function openConversation(user, matchItem, firstMessage) {
       db.conversations = [conv, ...db.conversations]
     }
     if (firstMessage) {
-      conv.messages.push({ from: 'me', text: firstMessage, time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) })
+      conv.messages.push({ id: `m-${db.nextId++}`, from: 'me', text: firstMessage, time: clock(Date.now()) })
     }
     saveDemo(db)
     return conv.id
   }
 
-  // live: reuse an existing conversation for this match if there is one
-  const { data: existing } = await supabase
-    .from('conversations')
-    .select('id')
-    .eq('match_id', matchItem.matchId)
-    .limit(1)
-  let convId = existing?.[0]?.id
+  // live: one conversation per match (unique index) — reuse it if it exists
+  if (!matchItem.matchId || !matchItem.finderId) throw new Error('This match can’t be messaged yet — refresh and try again.')
+  const findExisting = async () => {
+    const { data } = await supabase.from('conversations').select('id').eq('match_id', matchItem.matchId).limit(1)
+    return data?.[0]?.id
+  }
+  let convId = await findExisting()
   if (!convId) {
     const { data, error } = await supabase
       .from('conversations')
@@ -306,39 +433,66 @@ export async function openConversation(user, matchItem, firstMessage) {
       })
       .select('id')
       .single()
-    if (error) throw error
-    convId = data.id
+    if (error) {
+      // the other person opened it at the same moment → use theirs
+      if (error.code === '23505') convId = await findExisting()
+      if (!convId) throw error
+    } else convId = data.id
   }
-  if (firstMessage) {
-    await supabase.from('messages').insert({ conversation_id: convId, sender_id: user.id, content: firstMessage })
-  }
+  if (firstMessage) await sendMessage(user, convId, firstMessage)
   return convId
 }
 
 export async function sendMessage(user, conversationId, text) {
-  const time = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+  if (useDemo(user)) {
+    const db = loadDemo()
+    const msg = { id: `m-${db.nextId++}`, from: 'me', text, time: clock(Date.now()) }
+    const conv = db.conversations.find((c) => c.id === conversationId)
+    if (conv) {
+      conv.messages.push(msg)
+      saveDemo(db)
+    }
+    return msg
+  }
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({ conversation_id: conversationId, sender_id: user.id, content: text })
+    .select('id, sender_id, content, created_at')
+    .single()
+  if (error) throw error
+  return toUiMessage(user, data)
+}
+
+// Clears unread for messages sent TO me in this conversation (live: server-side RPC,
+// since clients can't update messages directly).
+export async function markConversationRead(user, conversationId) {
+  if (!conversationId) return
   if (useDemo(user)) {
     const db = loadDemo()
     const conv = db.conversations.find((c) => c.id === conversationId)
-    if (conv) {
-      conv.messages.push({ from: 'me', text, time })
-      saveDemo(db)
-    }
-    return { from: 'me', text, time }
+    if (conv && conv.unread) { conv.unread = 0; saveDemo(db) }
+    return
   }
-  const { error } = await supabase
-    .from('messages')
-    .insert({ conversation_id: conversationId, sender_id: user.id, content: text })
-  if (error) throw error
-  return { from: 'me', text, time }
+  const { error } = await supabase.rpc('mark_conversation_read', { p_conversation_id: conversationId })
+  if (error) console.warn('mark_conversation_read failed:', error.message)
 }
 
-export function markConversationRead(conversationId) {
-  if (!isLive) {
-    const db = loadDemo()
-    const conv = db.conversations.find((c) => c.id === conversationId)
-    if (conv && conv.unread) { conv.unread = 0; saveDemo(db) }
-  }
+/**
+ * Live-push new messages in one conversation. cb(uiMessage) fires for every insert
+ * (including my own — de-dupe on `id`). Returns an unsubscribe function.
+ * Needs `messages` in the supabase_realtime publication (004 migration).
+ */
+export function subscribeToMessages(user, conversationId, cb) {
+  if (useDemo(user) || !supabase || !conversationId) return () => {}
+  const channel = supabase
+    .channel(`messages:${conversationId}`)
+    .on(
+      'postgres_changes',
+      { event: 'INSERT', schema: 'public', table: 'messages', filter: `conversation_id=eq.${conversationId}` },
+      (payload) => cb(toUiMessage(user, payload.new)),
+    )
+    .subscribe()
+  return () => { supabase.removeChannel(channel) }
 }
 
 /* ------------------------------------------------------------------ */

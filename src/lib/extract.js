@@ -23,6 +23,7 @@ const STOP = new Set([
   'think', 'maybe', 'left', 'with', 'have', 'this', 'that', 'just', 'today', 'about',
   'something', 'someone', 'please', 'help', 'last', 'seen', 'where', 'when', 'from',
   'idk', 'dunno', 'sure', 'idea', 'know', 'anywhere', 'somewhere', 'lost', 'my',
+  'umass', 'amherst', 'sticker', 'stickers', // campus/common words — never "did you mean" fodder
 ])
 
 // Phrases signalling the user doesn't know / hasn't said where → don't pin, ask gently.
@@ -42,7 +43,9 @@ const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // flat alias → payload table, sorted longest-first so specific phrases win.
 const BASE_ENTRIES = (() => {
   const E = []
-  for (const p of CAMPUS_PLACES) for (const a of [p.name, ...(p.aliases || [])]) E.push({ type: 'place', alias: a.toLowerCase(), payload: p })
+  // dorms carry their own safe aliases — their bare name ("Brown", "Field", "Oak") is
+  // only an alias when it isn't also an everyday word (see AMBIGUOUS_DORM)
+  for (const p of CAMPUS_PLACES) for (const a of [...(p.isDorm ? [] : [p.name]), ...(p.aliases || [])]) E.push({ type: 'place', alias: a.toLowerCase(), payload: p })
   for (const it of ITEMS) for (const a of it.aliases) E.push({ type: 'item', alias: a, payload: it })
   for (const c of COLORS) for (const a of c.aliases) E.push({ type: 'color', alias: a, payload: c })
   for (const m of MATERIALS) for (const a of m.aliases) E.push({ type: 'material', alias: a, payload: m })

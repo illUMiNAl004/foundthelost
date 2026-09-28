@@ -2,8 +2,34 @@ import { useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ItemCard from './ItemCard.jsx'
 import { STATUS_STYLES, TABS } from '../data/mockItems'
+import { useAuth } from '../hooks/useAuth.jsx'
+import { markReturned, getPhotoUrl } from '../lib/api.js'
+import { useEffect } from 'react'
 
 const SPRING = { type: 'spring', stiffness: 300, damping: 32 }
+
+// the finder's photo (private bucket → short-lived signed URL; data URL in demo)
+function ItemPhoto({ item }) {
+  const { user } = useAuth()
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    let live = true
+    setUrl(null)
+    if (item?.photoPath || item?.photoDataUrl) getPhotoUrl(user, item).then((u) => live && setUrl(u)).catch(() => {})
+    return () => { live = false }
+  }, [user, item])
+  if (!url) return null
+  return (
+    <motion.img
+      initial={{ opacity: 0, scale: 0.98 }}
+      animate={{ opacity: 1, scale: 1 }}
+      src={url}
+      alt={item.name}
+      className="mt-4 max-h-44 w-full rounded-2xl border border-white/80 object-cover shadow-sm dark:border-white/10"
+    />
+  )
+}
+
 
 const KIND_TILES = {
   match: 'bg-lime/70',
@@ -12,10 +38,29 @@ const KIND_TILES = {
   sensitive: 'bg-grape/50',
 }
 
-export default function BottomSheet({ items, selected, onSelect, onBack, onReport, onMessage }) {
+export default function BottomSheet({ items, selected, onSelect, onBack, onReport, onMessage, onReturned }) {
+  const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('match')
-  const [returned, setReturned] = useState(false)
+  // per-item result of "mark as returned": { [itemId]: 'busy' | { awarded } }
+  const [returns, setReturns] = useState({})
+
+  const returnState = selected
+    ? returns[selected.id] || (selected.status === 'returned' ? { awarded: false } : null)
+    : null
+  const handleReturned = async (item) => {
+    if (returns[item.id]) return
+    setReturns((r) => ({ ...r, [item.id]: 'busy' }))
+    try {
+      const result = await markReturned(user, item)
+      setReturns((r) => ({ ...r, [item.id]: result }))
+      onReturned?.(item, result)
+    } catch (e) {
+      console.error('markReturned failed:', e)
+      setReturns((r) => { const { [item.id]: _, ...rest } = r; return rest })
+      alert(`Could not mark it returned:\n${e.message || e}`)
+    }
+  }
 
   const expanded = open || !!selected
   const tabItems = items.filter((it) => it.kind === tab)
@@ -69,7 +114,39 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
           </div>
         )}
 
-        <AnimatePresence mode="wait">
+        {/* tabs live outside the animated swap on purpose: a layoutId pill inside an exiting
+            subtree stalls AnimatePresence(mode="wait") and the detail never mounts */}
+        {!selected && (
+        <div className="mb-2.5 flex gap-1.5 rounded-2xl bg-ink/[0.05] p-1 dark:bg-white/5">
+          {TABS.map((t) => {
+            const active = tab === t.key
+            const count = items.filter((it) => it.kind === t.key).length
+            return (
+              <button
+                key={t.key}
+                onClick={() => setTab(t.key)}
+                className="relative flex-1 rounded-xl px-2 py-2 font-mono text-[10.5px] font-bold uppercase tracking-[0.06em]"
+              >
+                {active && (
+                  <motion.span
+                    layoutId="tab-pill"
+                    transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                    className="absolute inset-0 rounded-xl bg-white shadow-sm dark:bg-slate-700"
+                  />
+                )}
+                <span className={`relative ${active ? 'text-ink dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
+                  {t.emoji} {t.label}
+                  <span className={`ml-1 rounded-full px-1.5 py-px ${active ? 'bg-lime text-ink' : 'bg-ink/10 dark:bg-white/10'}`}>
+                    {count}
+                  </span>
+                </span>
+              </button>
+            )
+          })}
+        </div>
+        )}
+
+        <AnimatePresence mode="wait" initial={false}>
           {selected ? (
             /* ---------- item detail ---------- */
             <motion.div
@@ -106,6 +183,8 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                   </span>
                 </div>
               </div>
+
+              <ItemPhoto item={selected} />
 
               {selected.kind === 'match' && (
                 <div className="mt-4 rounded-2xl border border-lime bg-lime/20 p-3.5 dark:bg-lime/10">
@@ -176,12 +255,17 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 {selected.kind === 'found' && (
                   <motion.button
                     whileTap={{ scale: 0.96 }}
-                    onClick={() => setReturned(true)}
+                    onClick={() => handleReturned(selected)}
+                    disabled={!!returnState}
                     className={`flex-1 rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition ${
-                      returned ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'btn-lime'
-                    }`}
+                      returnState && returnState !== 'busy' ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30' : 'btn-lime'
+                    } disabled:cursor-default`}
                   >
-                    {returned ? 'reunited 🎉 +50 karma' : 'mark as returned'}
+                    {returnState === 'busy'
+                      ? 'marking…'
+                      : returnState
+                        ? returnState.awarded ? 'reunited 🎉 +50 karma' : 'reunited 🎉'
+                        : 'mark as returned'}
                   </motion.button>
                 )}
                 {selected.kind === 'match' && (
@@ -205,34 +289,6 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
               exit={{ opacity: 0 }}
               className="flex min-h-0 flex-1 flex-col"
             >
-              <div className="mb-2.5 flex gap-1.5 rounded-2xl bg-ink/[0.05] p-1 dark:bg-white/5">
-                {TABS.map((t) => {
-                  const active = tab === t.key
-                  const count = items.filter((it) => it.kind === t.key).length
-                  return (
-                    <button
-                      key={t.key}
-                      onClick={() => setTab(t.key)}
-                      className="relative flex-1 rounded-xl px-2 py-2 font-mono text-[10.5px] font-bold uppercase tracking-[0.06em]"
-                    >
-                      {active && (
-                        <motion.span
-                          layoutId="tab-pill"
-                          transition={{ type: 'spring', stiffness: 420, damping: 34 }}
-                          className="absolute inset-0 rounded-xl bg-white shadow-sm dark:bg-slate-700"
-                        />
-                      )}
-                      <span className={`relative ${active ? 'text-ink dark:text-white' : 'text-slate-500 dark:text-slate-400'}`}>
-                        {t.emoji} {t.label}
-                        <span className={`ml-1 rounded-full px-1.5 py-px ${active ? 'bg-lime text-ink' : 'bg-ink/10 dark:bg-white/10'}`}>
-                          {count}
-                        </span>
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-
               <div className={`min-h-0 flex-1 space-y-2.5 ${expanded ? 'overflow-y-auto no-scrollbar pb-2' : 'overflow-hidden'}`}>
                 {tabItems.map((item, i) => (
                   <ItemCard key={`${tab}-${item.id}`} item={item} index={i} onClick={onSelect} />

@@ -11,10 +11,10 @@ const KIND_TILES = {
 export default function ItemCard({ item, onClick, index = 0 }) {
   return (
     <motion.button
-      layout
+      // no `layout` / `exit` here: the cards live inside an AnimatePresence'd list, and exit +
+      // layout animations propagating into an exiting subtree stalled the swap to the detail view
       initial={{ opacity: 0, y: 18 }}
       animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, scale: 0.95 }}
       transition={{ type: 'spring', stiffness: 320, damping: 28, delay: index * 0.045 }}
       whileHover={{ y: -3, scale: 1.012 }}
       whileTap={{ scale: 0.98 }}

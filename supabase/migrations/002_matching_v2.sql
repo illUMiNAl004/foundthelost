@@ -210,6 +210,7 @@ create table if not exists public.lexicon (
 );
 
 alter table public.lexicon enable row level security;
+drop policy if exists "lexicon readable to members" on public.lexicon;
 create policy "lexicon readable to members" on public.lexicon
   for select using (auth.role() = 'authenticated');
 

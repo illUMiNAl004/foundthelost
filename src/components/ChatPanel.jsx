@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { useAuth } from '../hooks/useAuth.jsx'
-import { getConversations, sendMessage, markConversationRead } from '../lib/api.js'
+import { getConversations, sendMessage, markConversationRead, subscribeToMessages } from '../lib/api.js'
 
 const SPRING = { type: 'spring', stiffness: 320, damping: 32 }
 
@@ -10,14 +10,34 @@ export default function ChatPanel({ onClose, initialConversationId }) {
   const [convs, setConvs] = useState([])
   const [active, setActive] = useState(initialConversationId || null)
   const [draft, setDraft] = useState('')
+  const [sendError, setSendError] = useState('')
   const scrollRef = useRef(null)
+
+  // append a message to a conversation once (realtime echoes my own sends back)
+  const appendMessage = (convId, msg) =>
+    setConvs((cs) => cs.map((c) =>
+      c.id === convId && !(msg.id && c.messages.some((m) => m.id === msg.id))
+        ? { ...c, messages: [...c.messages, msg] }
+        : c))
 
   useEffect(() => {
     getConversations(user).then((cs) => {
       setConvs(cs)
-      if (initialConversationId) markConversationRead(initialConversationId)
+      if (initialConversationId) {
+        markConversationRead(user, initialConversationId)
+        setConvs((all) => all.map((x) => (x.id === initialConversationId ? { ...x, unread: 0 } : x)))
+      }
     }).catch(console.error)
   }, [user, initialConversationId])
+
+  // live: new messages in the open thread arrive instantly (Supabase Realtime)
+  useEffect(() => {
+    if (!active) return
+    return subscribeToMessages(user, active, (msg) => {
+      appendMessage(active, msg)
+      if (msg.from === 'them') markConversationRead(user, active)
+    })
+  }, [user, active])
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 9e6, behavior: 'smooth' })
@@ -25,7 +45,7 @@ export default function ChatPanel({ onClose, initialConversationId }) {
 
   const openConv = (c) => {
     setActive(c.id)
-    markConversationRead(c.id)
+    markConversationRead(user, c.id)
     setConvs((cs) => cs.map((x) => (x.id === c.id ? { ...x, unread: 0 } : x)))
   }
 
@@ -34,8 +54,14 @@ export default function ChatPanel({ onClose, initialConversationId }) {
     const text = draft.trim()
     if (!text) return
     setDraft('')
-    const msg = await sendMessage(user, active, text)
-    setConvs((cs) => cs.map((c) => (c.id === active ? { ...c, messages: [...c.messages, msg] } : c)))
+    setSendError('')
+    try {
+      appendMessage(active, await sendMessage(user, active, text))
+    } catch (err) {
+      console.error('sendMessage failed:', err)
+      setDraft(text) // give the text back so nothing is lost
+      setSendError("Couldn't send — check your connection and try again.")
+    }
   }
 
   const conv = convs.find((c) => c.id === active)
@@ -143,7 +169,7 @@ export default function ChatPanel({ onClose, initialConversationId }) {
               <div ref={scrollRef} className="min-h-0 flex-1 space-y-2 overflow-y-auto no-scrollbar pb-2">
                 {conv.messages.map((m, i) => (
                   <motion.div
-                    key={i}
+                    key={m.id || i}
                     initial={{ opacity: 0, y: 10, scale: 0.96 }}
                     animate={{ opacity: 1, y: 0, scale: 1 }}
                     transition={{ ...SPRING, delay: Math.min(i * 0.04, 0.3) }}
@@ -164,6 +190,9 @@ export default function ChatPanel({ onClose, initialConversationId }) {
                   </motion.div>
                 ))}
               </div>
+              {sendError && (
+                <div className="mt-2 rounded-xl border border-coral/30 bg-coral/10 px-3 py-2 text-[12.5px] font-medium text-coral">{sendError}</div>
+              )}
               <form onSubmit={send} className="mt-2 flex gap-2">
                 <input
                   value={draft}

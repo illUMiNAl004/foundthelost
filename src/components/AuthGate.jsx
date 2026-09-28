@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { useAuth } from '../hooks/useAuth.jsx'
+import { WAITLIST_ON } from '../lib/waitlist.js'
 
 const SPRING = { type: 'spring', stiffness: 320, damping: 30 }
 
-export default function AuthGate({ onDone }) {
+export default function AuthGate({ onDone, onWaitlist }) {
   const { isLive, signIn, signUp, signInDemo, requestPasswordReset } = useAuth()
   const [mode, setMode] = useState('signin') // 'signin' | 'signup' | 'forgot'
   const [name, setName] = useState('')
@@ -13,6 +14,7 @@ export default function AuthGate({ onDone }) {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [sent, setSent] = useState(false) // false | 'signup' | 'reset'
+  const [invite, setInvite] = useState(false) // true when sign-up was refused by the invite gate
 
   const submit = async (e) => {
     e.preventDefault()
@@ -30,7 +32,8 @@ export default function AuthGate({ onDone }) {
         setSent('signup')
       }
     } catch (err) {
-      setError(err.message)
+      if (err.code === 'invite') setInvite(true)
+      else setError(err.message)
     } finally {
       setBusy(false)
     }
@@ -65,15 +68,44 @@ export default function AuthGate({ onDone }) {
           <p className="mt-3 text-[14px] text-slate-500 dark:text-slate-400">
             Sign in with your UMass email. Found items stay private — only verified owners get matched.
           </p>
-          <a
-            href="/landing.html"
-            className="mono-label mt-3 inline-block rounded-full border border-ink/10 bg-white/70 px-3.5 py-2 !text-[10px] backdrop-blur transition hover:border-lime hover:bg-white dark:border-white/15 dark:bg-slate-800/70"
-          >
-            new here? see how it works ↗
-          </a>
+          {!WAITLIST_ON && (
+            <a
+              href="/landing.html"
+              className="mono-label mt-3 inline-block rounded-full border border-ink/10 bg-white/70 px-3.5 py-2 !text-[10px] backdrop-blur transition hover:border-lime hover:bg-white dark:border-white/15 dark:bg-slate-800/70"
+            >
+              new here? see how it works ↗
+            </a>
+          )}
         </div>
 
-        {sent ? (
+        {invite ? (
+          <motion.div
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={SPRING}
+            className="glass glass-shadow rounded-3xl p-6 text-center"
+          >
+            <div className="text-4xl">🎟️</div>
+            <h2 className="font-display mt-3 text-xl font-bold">Not off the list yet</h2>
+            <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
+              We're letting people in a few at a time. <b>{email}</b> is on the list — you'll get an email the moment your spot opens.
+            </p>
+            {onWaitlist && (
+              <button
+                onClick={onWaitlist}
+                className="btn-lime mt-5 w-full rounded-2xl py-3 font-mono text-[13px] font-bold uppercase tracking-[0.08em]"
+              >
+                move up the list →
+              </button>
+            )}
+            <button
+              onClick={() => { setInvite(false); setMode('signin') }}
+              className="mt-3 w-full py-1 text-center text-[13px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
+            >
+              ← back to sign in
+            </button>
+          </motion.div>
+        ) : sent ? (
           <motion.div
             initial={{ scale: 0.9, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -99,6 +131,11 @@ export default function AuthGate({ onDone }) {
             {mode === 'forgot' && (
               <p className="text-[13px] text-slate-500 dark:text-slate-400">
                 Enter your UMass email and we'll send a link to reset your password.
+              </p>
+            )}
+            {mode === 'signup' && WAITLIST_ON && (
+              <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
+                Invite-only while we pilot — use the email you were approved with.
               </p>
             )}
             {mode === 'signup' && (

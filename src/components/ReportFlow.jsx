@@ -3,6 +3,14 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { parseDescription, inferOccurredAt } from '../lib/extract.js'
 import { BRANDS_FOR, MATERIALS_FOR } from '../data/dictionary.js'
 import HighlightedInput, { TYPE_STYLE } from './HighlightedInput.jsx'
+import SnapFill from './SnapFill.jsx'
+import PlacePicker from './PlacePicker.jsx'
+import MiniMap from './MiniMap.jsx'
+import { CAMPUS_PLACES } from '../data/campusPlaces.js'
+
+// IDs, bank cards and keys are never shown to anyone but a verified owner
+const SENSITIVE_ITEMS = new Set(['ucard', 'card', 'keys'])
+const isSensitive = (parsed) => SENSITIVE_ITEMS.has(parsed.spans.find((s) => s.type === 'item')?.payload.id)
 
 const SPRING = { type: 'spring', stiffness: 340, damping: 30 }
 
@@ -17,7 +25,7 @@ const wordPresent = (text, w) => new RegExp(`\\b${w.replace(/[.*+?^${}()|[\]\\]/
 // for what's still missing — location (incl. "which dining hall?" / "where roughly?"),
 // colour, brand, material — for every item type. Tapping a chip appends the word so the
 // description re-parses, highlights, and strengthens the match. Everything is optional.
-function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
+function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation, onPlacePick }) {
   const itemSpan = parsed.spans.find((s) => s.type === 'item')
   const itemId = itemSpan?.payload.id
   const brands = itemId ? BRANDS_FOR[itemId] : null
@@ -27,7 +35,8 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
 
   // what to ask, in priority order
   const askWhich = parsed.ambiguousPlace && !noLocation
-  const askWhere = parsed.missing.location && !parsed.ambiguousPlace && !noLocation && text.trim().length > 3
+  // also when they wrote "somewhere" / "idk": don't nag with chips, but offer the search box
+  const askWhere = (parsed.missing.location || parsed.vaguePlace) && !parsed.ambiguousPlace && !noLocation && text.trim().length > 3
   const askWhen = itemId && parsed.missing.time
   const askColor = itemId && parsed.missing.color
   const askBrand = brands && !hasBrand
@@ -67,10 +76,13 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation }) {
         </Row>
       )}
       {askWhere && (
-        <Row label="where, roughly?">
+        <Row label={parsed.vaguePlace ? 'any guess where?' : 'where, roughly?'}>
           {WHERE_OPTS.map((w) => <Chip key={w} label={w} onClick={() => onAdd(w)} />)}
-          <Chip label="I'm not sure" accent onClick={onNoLocation} />
+          <Chip label={parsed.vaguePlace ? 'skip' : "I'm not sure"} accent onClick={onNoLocation} />
         </Row>
+      )}
+      {(askWhich || askWhere) && onPlacePick && (
+        <PlacePicker compact value={null} onChange={onPlacePick} onCoords={(c) => onPlacePick({ name: 'Pinned spot', emoji: '📍', coords: c, source: 'device' })} placeholder="or search any place — “woo”, “du bois”, a dorm…" />
       )}
       {askWhen && <Row label="when?">{WHEN_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askColor && <Row label="color?">{COLOR_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
@@ -123,14 +135,6 @@ function ChipRow({ parsed, onApply }) {
   )
 }
 
-const AI_FIELDS = [
-  { label: 'Item', value: 'AirPods Pro (2nd gen)' },
-  { label: 'Category', value: 'Electronics 🎧' },
-  { label: 'Color', value: 'White' },
-  { label: 'Distinctive', value: 'Small scratch near hinge' },
-  { label: 'Location detected', value: 'Berkshire Dining Commons' },
-]
-
 const HANDOFF_OPTIONS = [
   { emoji: '🎒', title: 'Keep it with me', desc: 'The owner reaches you through in-app chat.', status: 'with you' },
   { emoji: '🏛️', title: 'Drop-off desk', desc: 'Leave it at a registered reception near you.', status: 'dropped off' },
@@ -169,11 +173,10 @@ function Confetti() {
 
 export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [step, setStep] = useState(0)
-  const [scanning, setScanning] = useState(false)
-  const [scanned, setScanned] = useState(false)
   const [lostText, setLostText] = useState('')
   const [foundMode, setFoundMode] = useState(null) // null | 'photo' | 'text'
   const [foundText, setFoundText] = useState('')
+  const [snap, setSnap] = useState(null) // Snap & Fill result: { vision, photo, coords, place, … }
   const [noLocation, setNoLocation] = useState(false)
 
   const isFound = mode === 'found'
@@ -183,10 +186,30 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   // append a detail word (from a follow-up chip) to the description if not already there
   const addWord = (setter) => (w) => setter((prev) => (wordPresent(prev, w) ? prev : `${prev.trim()} ${w}`.trim()))
 
-  const startScan = () => {
-    setScanning(true)
-    setTimeout(() => { setScanning(false); setScanned(true) }, 1500)
+  // The photo's structured answer becomes an editable sentence → the SAME parser runs on
+  // it, so photo reports get identical chips, title, category and matching features.
+  const handleSnap = (r) => {
+    setSnap(r)
+    if (r?.vision?.description && !foundText.trim()) setFoundText(r.vision.description)
+    if (!r) setFoundText('')
   }
+
+  // an explicit choice from the place picker / dragged pin beats anything we inferred
+  const [placeOverride, setPlaceOverride] = useState(null) // { name, emoji, coords, area?, source? }
+  const [pinCoords, setPinCoords] = useState(null) // [lng, lat] after dragging the pin
+  const pickPlace = (p) => { setPlaceOverride(p); setPinCoords(null); setNoLocation(false) }
+  const parsedPlace = (parsed) => (parsed.place ? CAMPUS_PLACES.find((c) => c.name === parsed.place) || { name: parsed.place, emoji: '📍', coords: parsed.coords } : null)
+
+  // where the found item is: picker → photo GPS → device GPS → a place named in the text
+  const foundPlace = placeOverride || (snap?.place ? { ...snap.place, source: snap.coordsSource, meters: snap.placeMeters } : null) || parsedPlace(found)
+  const foundPlaceName = foundPlace?.name || null
+  const foundCoords = pinCoords || placeOverride?.coords || snap?.coords || found.coords || null
+  // where the lost item was: picker → a place named in the text
+  const lostPlace = placeOverride || parsedPlace(lost)
+  const lostPlaceName = lostPlace?.name || null
+  const lostCoords = pinCoords || placeOverride?.coords || lost.coords || null
+  const activePlace = isFound ? foundPlace : lostPlace
+  const activeCoords = isFound ? foundCoords : lostCoords
 
   const totalSteps = isFound ? 3 : 2
 
@@ -204,7 +227,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
         exit={{ scale: 0.95, y: 16, opacity: 0 }}
         transition={SPRING}
         onClick={(e) => e.stopPropagation()}
-        className="glass glass-shadow relative w-full max-w-md overflow-hidden rounded-[28px] p-6"
+        className="glass glass-shadow no-scrollbar relative max-h-[calc(100dvh-2rem)] w-full max-w-md overflow-y-auto overflow-x-hidden rounded-[28px] p-5 sm:p-6"
       >
         {/* progress dots */}
         <div className="mb-5 flex items-center justify-between">
@@ -282,66 +305,28 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     autoFocus
                   />
                   <ChipRow parsed={found} onApply={addWord(setFoundText)} />
-                  <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation} onNoLocation={() => setNoLocation(true)} />
+                  <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
                 </>
               ) : isFound ? (
                 <>
                   <h2 className="font-display text-2xl font-bold tracking-tight">Snap it. We'll do the rest.</h2>
                   <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
-                    One photo — our AI reads the item, color, and details. No forms.
+                    One photo — our AI reads the item, colour, brand and details. No forms.
                   </p>
 
-                  <div className="relative mt-5 grid h-52 place-items-center overflow-hidden rounded-2xl border-2 border-dashed border-ink/25 bg-lime/15 dark:border-lime/30 dark:bg-lime/5">
-                    {!scanned && !scanning && (
-                      <motion.button
-                        whileHover={{ scale: 1.04 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={startScan}
-                        className="btn-lime rounded-2xl px-5 py-3 font-mono text-[13px] font-bold uppercase tracking-[0.08em]"
-                      >
-                        📸 Use sample photo
-                      </motion.button>
-                    )}
-                    {(scanning || scanned) && (
-                      <div className="grid h-full w-full place-items-center text-6xl">🎧</div>
-                    )}
-                    {scanning && (
-                      <motion.div
-                        initial={{ top: '-12%' }}
-                        animate={{ top: '108%' }}
-                        transition={{ duration: 0.75, repeat: Infinity, ease: 'easeInOut' }}
-                        className="absolute inset-x-0 h-10 bg-gradient-to-b from-transparent via-lime/70 to-transparent"
-                      />
-                    )}
-                    {scanning && (
-                      <div className="absolute bottom-3 rounded-full bg-slate-900/70 px-3 py-1 text-[12px] font-medium text-white backdrop-blur">
-                        Reading the photo…
-                      </div>
-                    )}
-                  </div>
+                  <SnapFill onResult={handleSnap} onFallbackToText={() => setFoundMode('text')} />
 
-                  {scanned && (
-                    <motion.div className="mt-4 space-y-2">
-                      {AI_FIELDS.map((f, i) => (
-                        <motion.div
-                          key={f.label}
-                          initial={{ opacity: 0, x: -16 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          transition={{ ...SPRING, delay: 0.08 + i * 0.09 }}
-                          className="flex items-center justify-between rounded-xl border border-white/70 bg-white/70 px-3.5 py-2.5 text-[13.5px] backdrop-blur dark:border-white/10 dark:bg-slate-800/60"
-                        >
-                          <span className="font-medium text-slate-500 dark:text-slate-400">{f.label}</span>
-                          <span className="font-semibold">{f.value}</span>
-                        </motion.div>
-                      ))}
-                      <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.6 }}
-                        className="pt-1 text-center text-[12px] text-slate-400"
-                      >
-                        ✦ extracted in 1.2s — tap any field to correct it
-                      </motion.div>
+                  {snap?.vision && (
+                    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.4 }}>
+                      <HighlightedInput
+                        value={foundText}
+                        onChange={setFoundText}
+                        placeholder="Fix anything the AI got wrong…"
+                        spans={found.spans}
+                        rows={2}
+                      />
+                      <ChipRow parsed={found} onApply={addWord(setFoundText)} />
+                      <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation || !!snap.coords || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
                     </motion.div>
                   )}
                 </>
@@ -359,7 +344,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     autoFocus
                   />
                   <ChipRow parsed={lost} onApply={addWord(setLostText)} />
-                  <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} noLocation={noLocation} onNoLocation={() => setNoLocation(true)} />
+                  <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} noLocation={noLocation || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
                 </>
               )}
 
@@ -369,7 +354,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   whileTap={{ scale: 0.97 }}
                   disabled={
                     isFound
-                      ? foundMode === 'photo' ? !scanned : foundText.trim().length < 8
+                      ? foundMode === 'photo' ? !snap?.vision || foundText.trim().length < 3 : foundText.trim().length < 8
                       : lostText.trim().length < 8
                   }
                   onClick={() => setStep(1)}
@@ -394,26 +379,28 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                 {isFound ? 'Where is it?' : 'Where did you last have it?'}
               </h2>
               <p className="mt-1.5 text-[14px] text-slate-500 dark:text-slate-400">
-                {isFound ? 'We pre-filled this from the photo location.' : 'A rough area is enough — the AI does the rest.'}
+                {placeOverride || pinCoords
+                  ? 'Got it — drag the pin if the exact spot matters.'
+                  : isFound
+                    ? snap?.coordsSource === 'photo' ? 'Pre-filled from the photo’s location.'
+                      : snap?.coordsSource === 'device' ? 'Pre-filled from where you are right now.'
+                      : 'A rough area is enough — the AI does the rest.'
+                    : 'A rough area is enough — the AI does the rest.'}
               </p>
 
-              <div className="relative mt-5 h-44 overflow-hidden rounded-2xl border border-white/70 dark:border-white/10">
-                <div className="absolute inset-0 bg-[radial-gradient(circle_at_30%_30%,#dbeafe,transparent_60%),radial-gradient(circle_at_75%_70%,#ccfbf1,transparent_55%)] bg-slate-100 dark:bg-slate-800 dark:opacity-60" />
-                <div className="absolute inset-0 opacity-40 [background-image:linear-gradient(rgba(100,116,139,0.25)_1px,transparent_1px),linear-gradient(90deg,rgba(100,116,139,0.25)_1px,transparent_1px)] [background-size:34px_34px]" />
-                <motion.div
-                  initial={{ y: -36, opacity: 0 }}
-                  animate={{ y: 0, opacity: 1 }}
-                  transition={{ ...SPRING, delay: 0.25 }}
-                  className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-full text-4xl drop-shadow-lg"
-                >
-                  📍
-                </motion.div>
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-white/85 px-3.5 py-1.5 text-[13px] font-semibold shadow backdrop-blur dark:bg-slate-900/85">
-                  {isFound
-                    ? foundMode === 'text' ? found.place || 'On campus' : 'Berkshire Dining Commons'
-                    : lost.place || 'On campus'}
-                </div>
+              <PlacePicker
+                value={activePlace ? { ...activePlace, name: pinCoords ? `${activePlace.name} · pin adjusted` : activePlace.name } : null}
+                onChange={pickPlace}
+                onCoords={(c) => pickPlace({ name: 'Pinned spot', emoji: '📍', coords: c, source: 'device' })}
+                placeholder={isFound ? 'Where is it? — “woo”, “du bois”, a dorm…' : 'Where did you last have it?'}
+                autoFocus={!activePlace}
+              />
+              <div className="mt-3">
+                <MiniMap coords={activeCoords} emoji={isFound ? (snap?.vision?.emoji || '🙌') : '😥'} onMove={setPinCoords} />
               </div>
+              {!activePlace && !activeCoords && (
+                <p className="mt-2 text-center text-[12px] text-slate-400">No place yet — search above, use your location, or tap the map.</p>
+              )}
 
               <div className="mt-4 flex gap-2.5">
                 <button
@@ -432,9 +419,10 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         category: lost.category,
                         description: lostText.trim(),
                         status: 'still searching',
-                        building: lost.place || 'On campus',
-                        coords: lost.coords,
+                        building: lostPlaceName || 'On campus',
+                        coords: lostCoords,
                         occurredAt: inferOccurredAt(lostText),
+                        sensitive: isSensitive(lost),
                       })
                     }
                     setStep(isFound ? 2 : totalSteps)
@@ -469,16 +457,21 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                     whileHover={{ scale: 1.015 }}
                     whileTap={{ scale: 0.975 }}
                     onClick={() => {
-                      const fromText = foundMode === 'text'
+                      // both paths submit the PARSED description; the photo path adds the
+                      // model's structured answer + the photo for private storage
+                      const v = snap?.vision
                       onSubmit?.({
                         kind: 'found',
-                        name: fromText ? found.title : 'AirPods Pro (2nd gen)',
-                        category: fromText ? found.category : 'electronics',
-                        description: fromText ? foundText.trim() : 'White charging case, small scratch near the hinge.',
+                        name: found.title,
+                        category: found.category !== 'other' ? found.category : (v?.category || 'other'),
+                        description: foundText.trim(),
                         status: opt.status,
-                        building: fromText ? (found.place || 'On campus') : 'Berkshire Dining Commons',
-                        coords: fromText ? found.coords : null,
-                        occurredAt: fromText ? inferOccurredAt(foundText) : null,
+                        building: foundPlaceName || 'On campus',
+                        coords: foundCoords,
+                        occurredAt: inferOccurredAt(foundText) || (snap ? new Date().toISOString() : null),
+                        sensitive: !!v?.sensitive || isSensitive(found),
+                        attributes: v ? { vision: v } : undefined,
+                        photo: snap?.photo?.blob || null, // compressed JPEG Blob → private Storage via the api layer
                       })
                       setStep(3)
                     }}
