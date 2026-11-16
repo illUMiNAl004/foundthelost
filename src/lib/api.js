@@ -4,7 +4,7 @@ import { supabase, isLive } from './supabase.js'
 import { MY_ITEMS, COMMUNITY_FOUND, CAMPUS_CENTER } from '../data/mockItems.js'
 import { findMatches } from './matching.js'
 import { parseDescription } from './extract.js'
-import { learnTerms, hydrateLearned } from './lexicon.js'
+import { learnTerms, hydrateLearned, resetLexicon } from './lexicon.js'
 
 // Grow the self-learning dictionary from a real report's wording (best-effort). In live
 // mode we also mirror each unknown term to the shared `lexicon` table so the database
@@ -108,6 +108,7 @@ function saveDemo(db) {
 
 export function resetDemo() {
   localStorage.removeItem(DB_KEY)
+  try { resetLexicon() } catch { /* best-effort */ }
 }
 
 /* ------------------------------------------------------------------ */
@@ -152,8 +153,9 @@ export async function getMyItems(user) {
     const myLost = mine.filter((it) => it.kind === 'lost')
     const myFound = mine.filter((it) => it.kind === 'found')
 
-    // run the engine: my lost reports vs the community found pool
-    const matches = findMatches(myLost, db.community || [])
+    // run the engine: my lost reports vs everything found — the community pool PLUS the found
+    // reports made on this device, so a solo walkthrough (snap a find, then report it lost) matches
+    const matches = findMatches(myLost, [...(db.community || []), ...myFound])
     const matchedLostIds = new Set(matches.map((m) => m.matchedLostId))
 
     // lost reports that didn't match stay in the Lost tab
@@ -243,11 +245,18 @@ export async function createItem(user, draft) {
       saveDemo(db)
     }
 
-    // immediate-match check for instant gratification on a new lost report
+    // immediate-match check for instant gratification. Lost report → best found item.
+    // Found report → the best lost report already waiting for it (shown as "someone is looking").
     let instantMatch = null
+    const withTime = (it) => (it.occurredAt ? { ...it, time: relTime(it.occurredAt) } : it)
     if (draft.kind === 'lost') {
-      const [best] = findMatches([{ ...item, time: relTime(item.occurredAt) }], db.community || [])
+      const pool = [...(db.community || []), ...db.items.filter((it) => it.kind === 'found').map(withTime)]
+      const [best] = findMatches([withTime(item)], pool, { bestOnly: true })
       if (best) instantMatch = best
+    } else {
+      const myLost = db.items.filter((it) => it.kind === 'lost').map(withTime)
+      const [best] = findMatches(myLost, [withTime(item)], { bestOnly: true })
+      if (best) instantMatch = { ...best, counterpart: myLost.find((l) => l.id === best.matchedLostId) || null }
     }
     return { item, instantMatch, learned }
   }
@@ -299,7 +308,25 @@ export async function createItem(user, draft) {
   // SECURITY DEFINER function to score this item against everyone else's privately.
   const { error: matchErr } = await supabase.rpc('match_item', { p_item_id: data.id })
   if (matchErr) console.warn('match_item rpc failed:', matchErr.message)
-  return { item: created, instantMatch: null, learned }
+  // best-effort: surface the strongest match the engine just wrote, so the success screen
+  // can show "we think we found it" instead of a generic "we're on it"
+  let instantMatch = null
+  try {
+    const col = draft.kind === 'lost' ? 'lost_item_id' : 'found_item_id'
+    const { data: m } = await supabase
+      .from('matches')
+      .select('id, score, breakdown, status, lost:items!matches_lost_item_id_fkey(*), found:items!matches_found_item_id_fkey(*)')
+      .eq(col, data.id).eq('status', 'pending')
+      .order('score', { ascending: false }).limit(1).maybeSingle()
+    if (m) {
+      if (draft.kind === 'lost' && m.found) {
+        instantMatch = { ...rowToUiItem(m.found), kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, lostAt: [m.lost?.lng ?? coords[0], m.lost?.lat ?? coords[1]], matchId: m.id, matchedLostId: data.id, finderId: m.found.user_id }
+      } else if (draft.kind === 'found') {
+        instantMatch = { ...created, kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, matchId: m.id, counterpart: m.lost ? rowToUiItem(m.lost) : null }
+      }
+    }
+  } catch (e) { console.warn('instant match lookup failed:', e?.message) }
+  return { item: created, instantMatch, learned }
 }
 
 /** Displayable URL for an item photo (short-lived signed URL in live mode). */
@@ -401,7 +428,7 @@ export async function openConversation(user, matchItem, firstMessage) {
       conv = {
         id: `c-${db.nextId++}`,
         matchId: key,
-        with: { name: 'Finder', avatar: '🧑‍🎓' },
+        with: { name: 'Jordan K.', avatar: '🧑‍🎓' },
         item: label,
         unread: 0,
         messages: [],

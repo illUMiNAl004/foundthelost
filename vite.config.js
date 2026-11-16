@@ -27,7 +27,8 @@ function devApi(env) {
             headers: req.headers,
             body: ['GET', 'HEAD'].includes(req.method) ? undefined : body,
           })
-          const response = await mod.handleVision(request, { VISION_BUDGET_MS: '25000', ...process.env, ...env })
+          // 45s: room for the open-weights Gemma 31B (~30s/photo) when it's the chosen model
+          const response = await mod.handleVision(request, { VISION_BUDGET_MS: '45000', ...process.env, ...env })
           res.statusCode = response.status
           response.headers.forEach((v, k) => res.setHeader(k, v))
           res.end(Buffer.from(await response.arrayBuffer()))

@@ -12,10 +12,14 @@ export const DEFAULT_OPENROUTER_MODEL = 'google/gemma-4-31b-it'
 // $0 tier on OpenRouter (rate-limited: ~50 req/day without credits). Used automatically when
 // the paid model answers 402, or always when VISION_MODEL points at it.
 export const FREE_OPENROUTER_MODEL = 'google/gemma-4-26b-a4b-it:free'
-// Gemini API (Google AI Studio) ids. 26B-A4B is the fast MoE and the reliable one; 31B is the
-// fallback (it has answered 500 on image requests during testing).
-export const DEFAULT_GEMINI_MODEL = 'gemma-4-26b-a4b-it'
-export const GEMINI_MODELS = ['gemma-4-26b-a4b-it', 'gemma-4-31b-it']
+// Gemini API (Google AI Studio) ids. Measured Nov 2, 2026 with a real key:
+//   gemma-4-26b-a4b-it  — now IGNORES thinkingLevel=minimal on IMAGE inputs: ~1,500 chars of
+//                         unflagged reasoning first, hits MAX_TOKENS / the time budget → unusable.
+//   gemma-4-31b-it      — clean JSON, ~30s per photo. Open weights → the default.
+//   gemini-3.5-flash-lite — clean JSON in ~1.6s on the same free key. The fallback when Gemma is
+//                         too slow for the budget; set VISION_MODEL to it for a live demo.
+export const DEFAULT_GEMINI_MODEL = 'gemma-4-31b-it'
+export const GEMINI_MODELS = ['gemma-4-31b-it', 'gemini-3.5-flash-lite']
 export const MAX_IMAGE_BYTES = 6 * 1024 * 1024 // post-compression; client sends ≤ ~1MB
 // Netlify sync functions are cut off around 10s. One model call gets 8s; a retry/rotation
 // only happens if there's still time in the overall budget.
@@ -159,8 +163,9 @@ async function callGemini({ base64, mime, env, model }) {
         temperature: 0.1,
         maxOutputTokens: 1500,
         responseMimeType: 'application/json',
-        // Gemma 4 thinks for 600–1000 tokens (+15–20s) unless told not to. Measured: minimal → 3.6s, 0 thought tokens.
-        thinkingConfig: { thinkingLevel: 'minimal' },
+        // Gemma 4 thinks for 600–1000 tokens (+15–20s) unless told not to. Gemini ids don't need
+        // (and may reject) the knob for a plain identification call, so it's only sent to Gemma.
+        ...(model.startsWith('gemma') ? { thinkingConfig: { thinkingLevel: 'minimal' } } : {}),
       },
     }),
     signal: AbortSignal.timeout(callTimeoutOf(env)),
@@ -187,8 +192,9 @@ async function callGeminiWithFallback(args) {
         return await callGemini({ ...args, model })
       } catch (e) {
         lastErr = normalizeAbort(e, 'gemini')
-        if (e.upstream !== 429 && !(e.upstream >= 500)) throw e
-        console.warn(`[vision] gemini ${model} failed (${e.upstream}), trying next`)
+        // 404 = Google retired that model id (they rotate often) → just try the next one
+        if (![404, 429, 504].includes(lastErr.upstream) && !(lastErr.upstream >= 500)) throw e
+        console.warn(`[vision] gemini ${model} failed (${lastErr.upstream}), trying next`)
       }
     }
     if (attempt === 0) await sleep(1200)
@@ -280,6 +286,8 @@ export function toDescription(n) {
   // drop repeats ("hydro flask … hydro flask", "rubber rubber duck") — keep the LAST occurrence so the item word survives
   bits = bits.filter((b, i) => !bits.slice(i + 1).some((later) => later.toLowerCase().includes(b.toLowerCase())))
   let s = bits.join(' ').trim()
+  // nothing identifiable (no item word at all) → the model's own sentence beats a lone colour ("Brown")
+  if (!n.itemId && !n.itemLabel) s = n.caption || s || 'unidentified item'
   if (!s) s = n.caption || 'unidentified item'
   // distinctive marks add information only if they say something the sentence doesn't already
   if (n.distinctive) {
@@ -287,7 +295,7 @@ export function toDescription(n) {
     const fresh = n.distinctive.toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !said.has(w))
     if (fresh.length) s += `, ${n.distinctive.replace(/\.$/, '')}`
   }
-  if (n.visibleText) s += ` (text: ${n.visibleText})`
+  if (n.visibleText && !s.toLowerCase().includes(n.visibleText.toLowerCase())) s += ` (text: ${n.visibleText})`
   return s.charAt(0).toUpperCase() + s.slice(1)
 }
 

@@ -49,7 +49,19 @@ export default function App() {
   const [activeConv, setActiveConv] = useState(null) // conversation id to open in chat
   const [karma, setKarma] = useState(0)
   const [unread, setUnread] = useState(0)
-  const [toast, setToast] = useState(null) // { words: [...] } when the lexicon learns
+  const [toast, setToast] = useState(null) // { words: [...] } when the lexicon learns · { error } for failures
+  const toastTimer = useRef(null)
+  const showError = useCallback((msg) => {
+    setToast({ error: msg })
+    clearTimeout(toastTimer.current)
+    toastTimer.current = setTimeout(() => setToast(null), 6000)
+  }, [])
+  // components without access to the toast (BottomSheet, panels) raise errors as a window event
+  useEffect(() => {
+    const onErr = (e) => showError(e.detail?.message || 'Something went wrong')
+    window.addEventListener('ftl:error', onErr)
+    return () => window.removeEventListener('ftl:error', onErr)
+  }, [showError])
   const mapApi = useRef(null)
   const startedRef = useRef(false)
   const pendingMatchRef = useRef(null)
@@ -131,22 +143,25 @@ export default function App() {
       setPanel('chat')
     } catch (e) {
       console.error('openConversation failed:', e)
-      alert(`Could not start the chat:\n${e.message || e}`)
+      showError(`Could not start the chat: ${e.message || e}`)
     }
   }
   const handleReportSubmit = async (draft) => {
     try {
       const { instantMatch, learned } = await createItem(user, draft)
       refresh()
-      // hold any instant match until the user closes the success screen
-      pendingMatchRef.current = instantMatch || null
+      // hold any instant match until the user closes the success screen (lost side only:
+      // a finder can't open the owner's report)
+      pendingMatchRef.current = draft.kind === 'lost' && instantMatch ? instantMatch : null
       if (learned?.length) {
         setToast({ words: learned.map((l) => l.label) })
         setTimeout(() => setToast(null), 5000)
       }
+      return { instantMatch }
     } catch (e) {
       console.error('createItem failed:', e)
-      alert(`Could not save your report:\n${e.message || e}`)
+      showError(`Could not save your report: ${e.message || e}`)
+      return null
     }
   }
 
@@ -296,13 +311,23 @@ export default function App() {
             transition={{ type: 'spring', stiffness: 320, damping: 26 }}
             className="glass glass-shadow pointer-events-auto fixed bottom-6 left-1/2 z-50 flex -translate-x-1/2 items-center gap-2.5 rounded-full px-4 py-2.5"
           >
-            <span className="text-[15px]">✨</span>
-            <span className="text-[13.5px] font-semibold">
-              Learned a new word: {toast.words.map((w) => (
-                <span key={w} className="font-mono text-lime-700 dark:text-lime">{w}</span>
-              )).reduce((prev, curr) => [prev, ', ', curr])}
-            </span>
-            <span className="mono-label !text-[10px]">added to the dictionary</span>
+            {toast.error ? (
+              <>
+                <span className="text-[15px]">⚠️</span>
+                <span className="max-w-[60vw] text-[13.5px] font-semibold text-coral">{toast.error}</span>
+                <button onClick={() => setToast(null)} className="mono-label !text-[10px] hover:text-ink dark:hover:text-white">dismiss</button>
+              </>
+            ) : (
+              <>
+                <span className="text-[15px]">✨</span>
+                <span className="text-[13.5px] font-semibold">
+                  Learned a new word: {toast.words.map((w) => (
+                    <span key={w} className="font-mono text-lime-700 dark:text-lime">{w}</span>
+                  )).reduce((prev, curr) => [prev, ', ', curr])}
+                </span>
+                <span className="mono-label !text-[10px]">added to the dictionary</span>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -273,3 +273,57 @@ Bugs found by Tanishq testing with real photos, all fixed and re-verified with P
 - Vite build now splits `maplibre` / `vendor` chunks.
 - `netlify.toml`: `functions = "netlify/functions"`, esbuild bundler, `/api/*` redirect.
 - `STATUS_STYLES` has `returned` / `recovered` / `closed`.
+
+---
+
+# Addendum — Nov 2, 2026: demo-day sweep (parser, matcher, vision, backend status)
+
+## E. Backend is gone
+`xmafqfhmleegnvkqhjuc.supabase.co` returns NXDOMAIN from every resolver → the free-tier project was
+deleted after its pause. Live mode cannot work until a **new** Supabase project exists: create it,
+run `001`→`009` in order, put the new URL/anon key in `.env.local` (the two `VITE_SUPABASE_*` lines
+are commented out right now so the app runs in demo mode; original values in
+`.env.local.bak-2026-11-02`), and update the Netlify env too. `signup_mode` will default to invite —
+approve your own email before testing sign-up.
+
+## F. Parser / matcher fixes (JS + `009_item_neighbors.sql`)
+- **Brand hidden inside the item word.** "hydro flask", "stanley", "beats", "jordans" are item aliases
+  AND brands; the item entry claimed the characters first so `brand` was always null → the brand gate
+  never fired (Hydro Flask ↔ Stanley scored 88). `extract.js` now runs a second, non-claiming brand
+  scan (`detectBrand`); `featurize` reads `p.brand`. Flask ↔ Stanley is now `GATED(brand)`, matching
+  what the SQL side (separate `ftl_brand()` scan) already did.
+- **Qualifier echo.** "AirPods Pro" → title "White AirPods Pro Pro"; "AirPods Max" → "… Max Max".
+  Qualifiers already inside the item phrase are skipped.
+- **Title uses the user's brand words** ("North Face", not "The North Face") and skips the brand when
+  the item phrase already carries it ("Navy Hydro Flask", not "Navy Hydro Flask Hydro Flask").
+- **"Did you mean" noise.** `gen → Leather`, `pro → Blue Wall`, `card → Jacket/Wallet`,
+  `charging → Charger`, `table → Tablet`, `maple → Maple (dorm)`. Prefix completion now needs ≥4
+  chars and ≥60 % of the candidate (or the complete first word of a multi-word alias); tokens < 4
+  chars are never suggested/learned; ~90 everyday words added to `STOP`; dorm "<name> hall/dorm"
+  forms left out of the fuzzy pool.
+- **Item neighbours** (`ITEM_NEIGHBORS`): earbuds ↔ airpods_case, water_bottle ↔ coffee_cup,
+  wallet ↔ card ↔ ucard, notebook ↔ textbook, pen ↔ pencil_case are a weak identity match
+  (semantic 0.65, composite ×0.9) instead of a hard reject. Bare `case` is no longer an AirPods-case
+  alias ("phone case", "white case" were being typed as `airpods_case`); "charging case" is.
+- **Unknown location is neutral** (0.5), not a 0.1 penalty, when either side has no pin.
+- **Demo pool** (`api.js`): a lost report is also matched against found reports made on the same
+  device, so a solo walkthrough (snap a find → report it lost) produces a match.
+
+## G. Vision model findings (real key, Nov 2)
+- Google AI Studio keys now come in an `AQ.…` format — valid.
+- `gemma-4-26b-a4b-it` **ignores `thinkingLevel: minimal` on image inputs**: ~1,500 chars of
+  unflagged reasoning → MAX_TOKENS / 38 s timeouts. Dropped from the rotation.
+- `gemma-4-31b-it`: clean JSON, ~30 s/photo → the open-weights default (`DEFAULT_GEMINI_MODEL`).
+- `gemini-3.5-flash-lite`: ~1.6 s/photo on the same key → fallback in `GEMINI_MODELS`; `.env.local`
+  pins `VISION_MODEL=gemini-3.5-flash-lite` for the demo (delete the value to go back to Gemma).
+  `thinkingConfig` is only sent to Gemma ids; a 404 (retired model id) now rotates to the next model.
+- Vite dev budget raised to 45 s so 31B can finish locally; prod keeps the 9.5 s Netlify budget
+  (only flash-lite fits it).
+- `gemini-2.5-*` ids are retired (404). OpenRouter key has a **$0 limit** → "Key limit exceeded".
+- `toDescription()` falls back to the model's caption when nothing is identified (was emitting a
+  lone colour like "Brown" for a bulletin board).
+
+Verified headlessly (playwright-core + cached Chromium): waitlist → sign in → explore demo → globe →
+lost report (chips: navy · hydro flask · ILC · 1pm; place auto-pinned) → instant match 93–100 % →
+photo found-report (synthetic bottle → `water_bottle`, blue/white, metal, "UMASS" text, 2 s) →
+matching lost report → chat. `npm run build` green.

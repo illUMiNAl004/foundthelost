@@ -52,8 +52,13 @@ export function AuthProvider({ children }) {
     let done = false
     const finish = () => { if (!done) { done = true; setLoading(false) } }
 
+    // a sandbox (demo) user also exists in live mode — restore it unless a real session wins
+    const readDemo = () => { try { const raw = localStorage.getItem(DEMO_USER_KEY); return raw ? JSON.parse(raw) : null } catch { return null } }
+    const storedDemo = readDemo()
+    if (storedDemo) setUser(storedDemo)
+
     supabase.auth.getSession()
-      .then(({ data }) => { if (data?.session?.user) setUser(toUser(data.session.user)) })
+      .then(({ data }) => { if (data?.session?.user) { localStorage.removeItem(DEMO_USER_KEY); setUser(toUser(data.session.user)) } })
       .catch((e) => console.warn('[foundthelost] getSession failed:', e?.message))
       .finally(finish)
 
@@ -64,9 +69,14 @@ export function AuthProvider({ children }) {
       // session and fires PASSWORD_RECOVERY → show the "set a new password" screen.
       if (event === 'PASSWORD_RECOVERY') setRecovery(true)
       const next = session?.user ? toUser(session.user) : null
+      if (next) localStorage.removeItem(DEMO_USER_KEY) // a real session replaces the sandbox
       // keep the same object across hourly TOKEN_REFRESHED events so everything keyed
-      // on `user` (data refresh, open chat) doesn't reload for no reason
-      setUser((prev) => (prev && next && prev.id === next.id && prev.email === next.email && prev.name === next.name ? prev : next))
+      // on `user` (data refresh, open chat) doesn't reload for no reason.
+      // No session + a sandbox user → keep the sandbox (INITIAL_SESSION/SIGNED_OUT fire with null).
+      setUser((prev) => {
+        if (!next && prev?.demo) return prev
+        return prev && next && prev.id === next.id && prev.email === next.email && prev.name === next.name ? prev : next
+      })
     })
     return () => { clearTimeout(t); sub.subscription.unsubscribe() }
   }, [])

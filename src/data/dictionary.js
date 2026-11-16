@@ -49,7 +49,7 @@ export const ITEMS = [
   { id: 'pen', label: 'Pen', category: 'other', emoji: '🖊️', aliases: ['pen', 'pens', 'pencil', 'mechanical pencil', 'marker', 'highlighter', 'sharpie', 'fountain pen', 'stylus', 'apple pencil'] },
   { id: 'vape', label: 'Vape', category: 'other', emoji: '💨', aliases: ['vape', 'juul', 'elf bar', 'puff bar', 'pen vape'] },
   { id: 'retainer', label: 'Retainer', category: 'other', emoji: '🦷', aliases: ['retainer', 'invisalign', 'mouthguard', 'night guard'] },
-  { id: 'airpods_case', label: 'AirPods case', category: 'other', emoji: '🎧', aliases: ['airpods case', 'airpod case', 'earbud case', 'case'] },
+  { id: 'airpods_case', label: 'AirPods case', category: 'other', emoji: '🎧', aliases: ['airpods case', 'airpod case', 'earbud case', 'earbuds case', 'charging case'] },
   { id: 'water_color', label: 'Lunchbox', category: 'other', emoji: '🍱', aliases: ['lunchbox', 'lunch box', 'lunch bag'] },
 ]
 
@@ -81,6 +81,18 @@ export const COLOR_NEIGHBORS = {
   yellow: ['green', 'brown', 'orange'],
   orange: ['red', 'yellow'],
   white: ['grey'],
+}
+
+// Item types that are plausibly the SAME object described two ways (a found "charging case"
+// vs a lost "airpods"; a "card holder" vs a "ucard"; a "mug" vs a "tumbler"). The matcher
+// scores these as a weak identity match instead of hard-rejecting them. Symmetric — list one way.
+export const ITEM_NEIGHBORS = {
+  earbuds: ['airpods_case'],
+  water_bottle: ['coffee_cup'],
+  wallet: ['card', 'ucard'],
+  card: ['ucard'],
+  notebook: ['textbook'],
+  pen: ['pencil_case'],
 }
 
 // ---- materials -------------------------------------------------------------

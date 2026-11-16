@@ -59,7 +59,10 @@ export function bestMatch(token, candidates, threshold = 0.72) {
   for (const c of candidates) {
     const v = c.value.toLowerCase()
     if (v === t) continue // exact handled elsewhere
-    const isPrefix = v.startsWith(t) && t.length >= 3 && t.length < v.length
+    // incomplete word: ≥4 chars typed AND ≥60% of the candidate ("berksh"→berkshire), or the
+    // complete first word of a multi-word alias ("hydro"→hydro flask). Short stubs never fire
+    // ("gen"→genuine leather, "pro"→procrastination station, "card"→cardigan were all noise).
+    const isPrefix = t.length >= 4 && t.length < v.length && v.startsWith(t) && (t.length / v.length >= 0.6 || v.startsWith(t + ' '))
     // prefix completions get a confidence floor that grows with how much was typed
     const prefixScore = isPrefix ? 0.8 + 0.2 * (t.length / v.length) : 0
     const score = Math.max(ratio(t, v), dice(t, v), prefixScore)

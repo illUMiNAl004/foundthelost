@@ -20,10 +20,23 @@ const QUALIFIERS = [
 // words we never treat as fuzzy candidates / unknown-learnable (too common)
 const STOP = new Set([
   'the', 'and', 'for', 'lost', 'found', 'near', 'around', 'somewhere', 'campus',
+  'text', 'printed', 'print', 'side', 'front', 'written', 'says', 'reads', 'logo', 'visible', 'label', 'engraved',
   'think', 'maybe', 'left', 'with', 'have', 'this', 'that', 'just', 'today', 'about',
   'something', 'someone', 'please', 'help', 'last', 'seen', 'where', 'when', 'from',
   'idk', 'dunno', 'sure', 'idea', 'know', 'anywhere', 'somewhere', 'lost', 'my',
   'umass', 'amherst', 'sticker', 'stickers', // campus/common words — never "did you mean" fodder
+  // everyday words that kept surfacing as noisy "did you mean" hints / learnable tokens
+  'table', 'chair', 'desk', 'floor', 'room', 'hall', 'lounge', 'inside', 'outside', 'front',
+  'back', 'next', 'side', 'door', 'entrance', 'bathroom', 'class', 'lecture', 'building',
+  'small', 'large', 'medium', 'size', 'cracked', 'screen', 'charging', 'station', 'plus',
+  'gen', 'pro', 'max', 'mini', 'edition', 'really', 'probably', 'might', 'been', 'kinda',
+  'pretty', 'like', 'some', 'your', 'mine', 'there', 'here', 'into', 'onto', 'under', 'over',
+  'behind', 'between', 'after', 'before', 'during', 'while', 'ago', 'hour', 'hours', 'minutes',
+  'week', 'they', 'them', 'then', 'than', 'what', 'which', 'would', 'could', 'should', 'cant',
+  'dont', 'does', 'still', 'also', 'very', 'much', 'many', 'anyone', 'everyone', 'nothing',
+  'thing', 'things', 'stuff', 'item', 'object', 'somebody', 'anybody', 'remember', 'forgot',
+  'dropped', 'missing', 'name', 'owner', 'hidden', 'used', 'worn', 'edges', 'guest', 'services',
+  'card', // bare "card" is ambiguous (ucard / bank card / greeting card) — never guess "wallet"
 ])
 
 // Phrases signalling the user doesn't know / hasn't said where → don't pin, ask gently.
@@ -80,8 +93,26 @@ const FUZZY_POOL = [
   ...COLORS.flatMap((c) => c.aliases.map((a) => ({ value: a, type: 'color', label: c.label }))),
   ...BRANDS.flatMap((b) => b.aliases.map((a) => ({ value: a, type: 'brand', label: b.label }))),
   ...MATERIALS.flatMap((m) => m.aliases.map((a) => ({ value: a, type: 'material', label: m.label }))),
-  ...CAMPUS_PLACES.flatMap((p) => [p.name, ...(p.aliases || [])].map((a) => ({ value: a, type: 'place', label: p.name }))),
+  // dorms: only their safe aliases, and never the "<name> hall/dorm" forms — otherwise "maple"
+  // (syrup) and "brown" (bag) get a "did you mean Maple / Brown?" hint the parser deliberately avoids
+  ...CAMPUS_PLACES.flatMap((p) => [...(p.isDorm ? [] : [p.name]), ...(p.aliases || [])]
+    .filter((a) => !(p.isDorm && /\s(hall|dorm)$/i.test(a)))
+    .map((a) => ({ value: a, type: 'place', label: p.name }))),
 ].filter((c) => c.value.length >= 4)
+
+// Brands whose word is ALSO the item word ("hydro flask", "stanley", "beats") lose the
+// highlight race to the item entry (same characters, claimed once). Matching still needs the
+// brand signal, so brands get a second, non-claiming scan.
+const BRAND_RES = BRANDS
+  .flatMap((b) => b.aliases.map((a) => ({ alias: a, re: new RegExp(`\\b${escapeRe(a).replace(/\s+/g, '\\s+')}\\b`, 'i'), payload: b })))
+  .sort((a, b) => b.alias.length - a.alias.length)
+function detectBrand(text) {
+  for (const { re, payload } of BRAND_RES) {
+    const m = re.exec(text)
+    if (m) return { type: 'brand', start: m.index, end: m.index + m[0].length, text: m[0], payload, overlap: true }
+  }
+  return null
+}
 
 /**
  * Best-effort timestamp for WHEN the item was lost/found, parsed from the free text.
@@ -177,12 +208,13 @@ export function parseDescription(text = '') {
   const itemSpan = first('item')
   const colorSpan = first('color')
   const materialSpan = first('material')
-  const brandSpan = first('brand')
+  const brandSpan = first('brand') || detectBrand(text)
   const placeSpan = first('place')
   const timeSpan = first('time')
 
   const item = itemSpan?.payload || null
-  const quals = QUALIFIERS.filter((q) => q.re.test(text)).map((q) => q.label)
+  // a qualifier that is already part of the item phrase ("AirPods Pro", "AirPods Max") isn't repeated
+  const quals = QUALIFIERS.filter((q) => q.re.test(text) && !(itemSpan && q.re.test(itemSpan.text))).map((q) => q.label)
 
   // chips reflect the EXACT words the user typed, in document order, tagged by type.
   const chips = []
@@ -200,7 +232,9 @@ export function parseDescription(text = '') {
   const titleCase = (s) => s.replace(/\b[a-z]/g, (c) => c.toUpperCase()).replace(/\bUcard\b/i, 'UCard')
   const bits = []
   if (colorSpan) bits.push(titleCase(colorSpan.text))
-  if (brandSpan) bits.push(brandSpan.payload.label)
+  // brand in the user's own words ("North Face", not "The North Face"); skipped when the item
+  // phrase already carries it ("Hydro Flask" is both the brand and the item)
+  if (brandSpan && !(itemSpan && itemSpan.text.toLowerCase().includes(brandSpan.text.toLowerCase()))) bits.push(titleCase(brandSpan.text))
   if (materialSpan) bits.push(titleCase(materialSpan.text))
   if (itemSpan) bits.push(titleCase(itemSpan.text))
   quals.forEach((q) => bits.push(q))
@@ -215,9 +249,9 @@ export function parseDescription(text = '') {
   let tm
   while ((tm = tokenRe.exec(text))) {
     const tok = tm[0].toLowerCase()
-    if (covered(tm.index) || STOP.has(tok) || seenTok.has(tok)) continue
+    if (covered(tm.index) || STOP.has(tok) || seenTok.has(tok) || tok.length < 4) continue
     seenTok.add(tok)
-    if (tok.length >= 4) unknownTokens.push(tok)
+    unknownTokens.push(tok)
     const hit = bestMatch(tok, FUZZY_POOL)
     if (hit) suggestions.push({ token: tm[0], type: hit.type, label: hit.label, kind: hit.kind, score: Math.round(hit.score * 100) })
   }

@@ -178,6 +178,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [foundText, setFoundText] = useState('')
   const [snap, setSnap] = useState(null) // Snap & Fill result: { vision, photo, coords, place, … }
   const [noLocation, setNoLocation] = useState(false)
+  const [instant, setInstant] = useState(null) // best match found the moment the report was saved
 
   const isFound = mode === 'found'
   const lost = useMemo(() => parseDescription(lostText), [lostText])
@@ -413,7 +414,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   whileTap={{ scale: 0.97 }}
                   onClick={() => {
                     if (!isFound) {
-                      onSubmit?.({
+                      Promise.resolve(onSubmit?.({
                         kind: 'lost',
                         name: lost.title,
                         category: lost.category,
@@ -423,7 +424,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         coords: lostCoords,
                         occurredAt: inferOccurredAt(lostText),
                         sensitive: isSensitive(lost),
-                      })
+                      })).then((r) => setInstant(r?.instantMatch || null)).catch(() => {})
                     }
                     setStep(isFound ? 2 : totalSteps)
                   }}
@@ -460,7 +461,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                       // both paths submit the PARSED description; the photo path adds the
                       // model's structured answer + the photo for private storage
                       const v = snap?.vision
-                      onSubmit?.({
+                      Promise.resolve(onSubmit?.({
                         kind: 'found',
                         name: found.title,
                         category: found.category !== 'other' ? found.category : (v?.category || 'other'),
@@ -472,7 +473,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         sensitive: !!v?.sensitive || isSensitive(found),
                         attributes: v ? { vision: v } : undefined,
                         photo: snap?.photo?.blob || null, // compressed JPEG Blob → private Storage via the api layer
-                      })
+                      })).then((r) => setInstant(r?.instantMatch || null)).catch(() => {})
                       setStep(3)
                     }}
                     className="flex w-full items-center gap-3.5 rounded-2xl border border-white/70 bg-white/70 p-4 text-left backdrop-blur transition hover:border-lime dark:border-white/10 dark:bg-slate-800/60"
@@ -507,13 +508,37 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                 ✓
               </motion.div>
               <h2 className="font-display mt-5 text-2xl font-bold tracking-tight">
-                {isFound ? "You're someone's hero." : "We're on it."}
+                {instant ? (isFound ? 'Someone is already looking for this.' : 'We think we found it.') : isFound ? "You're someone's hero." : "We're on it."}
               </h2>
               <p className="mx-auto mt-2 max-w-[34ch] text-[14px] leading-relaxed text-slate-500 dark:text-slate-400">
-                {isFound
-                  ? 'The item is live. The moment someone reports it lost, they get matched — privately.'
-                  : "You'll get a notification the second something matching turns up. No scrolling required."}
+                {instant
+                  ? isFound
+                    ? 'A lost report already matches your find. The owner has been notified — privately.'
+                    : 'A found report matches your description. Only you can see this.'
+                  : isFound
+                    ? 'The item is live. The moment someone reports it lost, they get matched — privately.'
+                    : "You'll get a notification the second something matching turns up. No scrolling required."}
               </p>
+              {instant && (
+                <motion.div
+                  initial={{ opacity: 0, y: 12, scale: 0.97 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  transition={{ delay: 0.35, ...SPRING }}
+                  className="mx-auto mt-4 flex max-w-[22rem] items-center gap-3 rounded-2xl border border-lime bg-lime/20 p-3 text-left dark:bg-lime/10"
+                >
+                  <span className="grid h-11 w-11 flex-none place-items-center rounded-xl bg-white/70 text-2xl dark:bg-white/10">{(isFound ? instant.counterpart?.emoji : instant.emoji) || '🧸'}</span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[14.5px] font-semibold">{isFound ? instant.counterpart?.name || 'A lost report' : instant.name}</span>
+                    <span className="block truncate text-[12px] text-slate-500 dark:text-slate-400">
+                      {isFound ? `lost ${instant.counterpart?.place ? `near ${instant.counterpart.place.replace(/^last seen:\s*/i, '')}` : 'on campus'}` : `${instant.place} · ${instant.status}`}
+                    </span>
+                  </span>
+                  <span className="flex-none text-right">
+                    <span className="block font-mono text-[20px] font-bold leading-none">{instant.match}%</span>
+                    <span className="mono-label !text-[8.5px]">match</span>
+                  </span>
+                </motion.div>
+              )}
               {isFound && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
@@ -529,7 +554,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                 onClick={onClose}
                 className="btn-lime mt-6 w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em]"
               >
-                Back to the map
+                {instant && !isFound ? 'See the match →' : 'Back to the map'}
               </motion.button>
             </motion.div>
           )}

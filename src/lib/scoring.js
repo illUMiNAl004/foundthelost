@@ -14,7 +14,7 @@
 //      can never cross the threshold on their own.
 // ───────────────────────────────────────────────────────────────────────────
 import { parseDescription } from './extract.js'
-import { COLOR_NEIGHBORS } from '../data/dictionary.js'
+import { COLOR_NEIGHBORS, ITEM_NEIGHBORS } from '../data/dictionary.js'
 
 export const WEIGHTS = { semantic: 0.45, attributes: 0.2, location: 0.2, time: 0.15 }
 export const MATCH_THRESHOLD = 55
@@ -50,6 +50,7 @@ function jaccard(a, b) {
 }
 
 function locationScore(m) {
+  if (!Number.isFinite(m)) return 0.5 // no pin on one side → neutral, never a penalty or a boost
   if (m <= 50) return 1
   if (m <= 120) return 0.9
   if (m <= 250) return 0.78
@@ -87,7 +88,7 @@ export function featurize(item, coordsOverride) {
   const itemId = itemSpans[0]?.payload.id || null
   const colorIds = new Set(p.spans.filter((s) => s.type === 'color').map((s) => s.payload.id))
   const materialIds = new Set(p.spans.filter((s) => s.type === 'material').map((s) => s.payload.id))
-  const brandId = p.spans.find((s) => s.type === 'brand')?.payload.id || null
+  const brandId = p.brand || null // includes brands hidden inside the item word (hydro flask, stanley)
   // distinctive words drive semantic overlap: item identity + materials + free words
   const tokens = new Set([...(itemId ? [itemId] : []), ...materialIds, ...p.unknownTokens])
   return {
@@ -102,9 +103,12 @@ export function featurize(item, coordsOverride) {
   }
 }
 
+// earbuds ↔ airpods case, wallet ↔ card… — plausibly the same object described two ways
+const itemNeighbors = (a, b) => (ITEM_NEIGHBORS[a] || []).includes(b) || (ITEM_NEIGHBORS[b] || []).includes(a)
+
 function semantic(a, b) {
   let s = 0
-  if (a.itemId && b.itemId) s = a.itemId === b.itemId ? 0.9 : 0.05
+  if (a.itemId && b.itemId) s = a.itemId === b.itemId ? 0.9 : itemNeighbors(a.itemId, b.itemId) ? 0.65 : 0.05
   return Math.min(1, Math.max(s, jaccard(a.tokens, b.tokens)))
 }
 
@@ -139,10 +143,12 @@ export function scorePair(lost, found) {
   const L = featurize(lost, lost.lostAt || lost.coords)
   const F = featurize(found, found.coords)
 
-  const gateOut = (reason) => ({ score: 0, gated: true, reason, breakdown: { semantic: 0, attributes: 0, location: 0, time: 0, meters: Math.round(metersBetween(L.coords, F.coords)) } })
+  const m0 = metersBetween(L.coords, F.coords)
+  const gateOut = (reason) => ({ score: 0, gated: true, reason, breakdown: { semantic: 0, attributes: 0, location: 0, time: 0, meters: Number.isFinite(m0) ? Math.round(m0) : null } })
 
-  // BLOCKING / MUST-MATCH gates: a known difference means a different object.
-  if (L.itemId && F.itemId && L.itemId !== F.itemId) return gateOut('item')
+  // BLOCKING / MUST-MATCH gates: a known difference means a different object
+  // (neighbouring item types — earbuds vs their case — are a weak match, not a rejection).
+  if (L.itemId && F.itemId && L.itemId !== F.itemId && !itemNeighbors(L.itemId, F.itemId)) return gateOut('item')
   // brand: if both reports name a brand and they differ → different object.
   if (L.brandId && F.brandId && L.brandId !== F.brandId) return gateOut('brand')
   const cc = colorCompat(L.colorIds, F.colorIds)
@@ -159,6 +165,7 @@ export function scorePair(lost, found) {
   if (sem < SEM_FLOOR) composite = Math.min(composite, 0.5)
   // soft penalties — a weaker but real match still surfaces, just lower:
   composite *= cc.penalty // neighbor colour (black↔navy) pulls the score down
+  if (L.itemId && F.itemId && L.itemId !== F.itemId) composite *= 0.9 // neighbour item type (case vs earbuds)
   if (L.materialIds.size && F.materialIds.size && ![...L.materialIds].some((m) => F.materialIds.has(m))) composite *= 0.9
   if (L.brandId && F.brandId && L.brandId === F.brandId) composite = Math.min(1, composite + 0.05) // brand agreement boost
 
@@ -170,7 +177,7 @@ export function scorePair(lost, found) {
       attributes: Math.round(attr * 100),
       location: Math.round(loc * 100),
       time: Math.round(time * 100),
-      meters: Math.round(meters),
+      meters: Number.isFinite(meters) ? Math.round(meters) : null,
     },
   }
 }

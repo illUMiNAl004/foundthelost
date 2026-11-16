@@ -6,16 +6,30 @@ import { analyzeImage, providerFor } from './lib/vision-core.js'
 const JSON_HEADERS = { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }
 const reply = (status, body) => new Response(JSON.stringify(body), { status, headers: JSON_HEADERS })
 
-// Only signed-in students may spend vision credits. When Supabase is configured we
-// verify the bearer token against its auth endpoint; without Supabase (local demo)
-// the check is skipped so the feature is testable out of the box.
+// Signed-in students get unlimited Snap & Fill. Visitors in the sandbox demo (no token) get a
+// small per-IP allowance so judges/curious students can try it without an account, while a
+// script can't burn the vision quota. Without Supabase (local demo) the check is skipped.
+const SANDBOX_PER_HOUR = 20
+const sandboxHits = new Map() // ip → [timestamps]  (per warm instance; good enough as a brake)
+function sandboxAllowed(req) {
+  const ip = req.headers.get('x-nf-client-connection-ip') || (req.headers.get('x-forwarded-for') || '').split(',')[0].trim() || 'local'
+  const now = Date.now()
+  const hits = (sandboxHits.get(ip) || []).filter((t) => now - t < 3_600_000)
+  if (hits.length >= SANDBOX_PER_HOUR) { sandboxHits.set(ip, hits); return false }
+  hits.push(now); sandboxHits.set(ip, hits)
+  return true
+}
 async function verifyUser(req, env) {
   const url = env.VITE_SUPABASE_URL
   const anon = env.VITE_SUPABASE_ANON_KEY
   if (!url || !anon) return { ok: true, demo: true }
   const auth = req.headers.get('authorization') || ''
   const token = auth.startsWith('Bearer ') ? auth.slice(7) : null
-  if (!token) return { ok: false, reason: 'sign in to use Snap & Fill' }
+  if (!token) {
+    return sandboxAllowed(req)
+      ? { ok: true, sandbox: true }
+      : { ok: false, reason: 'demo limit reached for now — sign in to keep using Snap & Fill' }
+  }
   try {
     const r = await fetch(`${url}/auth/v1/user`, { headers: { apikey: anon, Authorization: `Bearer ${token}` } })
     if (!r.ok) return { ok: false, reason: 'session expired — sign in again' }

@@ -58,7 +58,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
     } catch (e) {
       console.error('markReturned failed:', e)
       setReturns((r) => { const { [item.id]: _, ...rest } = r; return rest })
-      alert(`Could not mark it returned:\n${e.message || e}`)
+      window.dispatchEvent(new CustomEvent('ftl:error', { detail: { message: `Could not mark it returned: ${e.message || e}` } }))
     }
   }
 
@@ -83,7 +83,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
           else if (info.offset.y < -70) setOpen(true)
         }}
         className={`glass glass-shadow rounded-t-[28px] border-b-0 px-4 pb-[max(env(safe-area-inset-bottom),12px)] pt-2.5 ${
-          expanded ? 'h-[60vh]' : 'h-[262px]'
+          selected ? 'h-[min(78vh,760px)]' : expanded ? 'h-[60vh]' : 'h-[262px]'
         } flex flex-col transition-[height] duration-500 [transition-timing-function:cubic-bezier(0.32,0.72,0.24,1)]`}
       >
         <button
@@ -150,13 +150,15 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
           {selected ? (
             /* ---------- item detail ---------- */
             <motion.div
-              key={`detail-${selected.id}`}
+              key={`detail-${selected.id}-${selected.matchedLostId || ''}`}
               initial={{ opacity: 0, x: 36 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -36 }}
               transition={{ type: 'spring', stiffness: 360, damping: 32 }}
               className="flex min-h-0 flex-1 flex-col"
             >
+              {/* everything above the action row scrolls; the buttons stay pinned and reachable */}
+              <div className="no-scrollbar -mx-1 min-h-0 flex-1 overflow-y-auto px-1 pb-1">
               <div className="flex items-start gap-4">
                 <button
                   onClick={onBack}
@@ -234,7 +236,8 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 {selected.details}
               </p>
 
-              <div className="mt-auto flex gap-2.5 pt-4">
+              </div>
+              <div className="flex flex-none gap-2.5 pt-3">
                 {selected.kind === 'match' && (
                   <motion.button
                     whileTap={{ scale: 0.96 }}
@@ -291,7 +294,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
             >
               <div className={`min-h-0 flex-1 space-y-2.5 ${expanded ? 'overflow-y-auto no-scrollbar pb-2' : 'overflow-hidden'}`}>
                 {tabItems.map((item, i) => (
-                  <ItemCard key={`${tab}-${item.id}`} item={item} index={i} onClick={onSelect} />
+                  <ItemCard key={`${tab}-${item.id}-${item.matchedLostId || ''}`} item={item} index={i} onClick={onSelect} />
                 ))}
                 {tabItems.length === 0 && (
                   <div className="py-8 text-center text-sm text-slate-500">
