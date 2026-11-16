@@ -59,9 +59,7 @@ Schema (every key required; use null when unknown, never guess):
   "visible_text": any legible text/names/initials on the object, or null,
   "sensitive": true if it is an ID card, bank/credit card, passport, license, keys, or shows a person's name/face,
   "confidence": number 0–1, how sure you are about item_id,
-  "caption": one natural sentence a student would text to describe it (colour + brand + item + distinguishing mark),
-  "ownership_question": a short question only the true owner could answer, about a detail that is literally visible in the photo but NOT guessable from the item type alone (printed text or a name, a sticker, an engraving, a charm, a scratch, the case colour, lock-screen wallpaper). Or null,
-  "ownership_answer": the expected answer in 1–4 words, exactly as visible. Or null.
+  "caption": one natural sentence a student would text to describe it (colour + brand + item + distinguishing mark).
 }
 
 Item vocabulary:
@@ -73,8 +71,7 @@ Rules:
 - A student ID / UCard / driver's license → item_id "ucard", sensitive true.
 - Do NOT read or transcribe card numbers, ID numbers or full names into visible_text — write "has a name" or "has an ID number" instead.
 - If several objects are visible, describe the most prominent found object, not the surface or hand holding it.
-- If you truly cannot tell what it is, item_id null, confidence ≤ 0.3, and still write the best caption you can.
-- ownership_question must never ask for the item type, its colour, or anything a stranger could guess ("is it a water bottle?"). Never make the answer a card number, ID number or full name. If nothing distinctive is visible, set both ownership fields to null.`
+- If you truly cannot tell what it is, item_id null, confidence ≤ 0.3, and still write the best caption you can.`
 
 const USER_PROMPT = 'Identify this found object. Respond with the JSON object only.'
 
@@ -263,10 +260,6 @@ export function normalize(raw) {
     sensitive: raw.sensitive === true || sensitiveById,
     confidence: clamp01(raw.confidence),
     caption: str(raw.caption, 240),
-    // sealed into hashes client-side before the report is saved (see src/lib/ownership.js)
-    challenge: str(raw.ownership_question, 120) && str(raw.ownership_answer, 60)
-      ? { question: str(raw.ownership_question, 120), answer: str(raw.ownership_answer, 60) }
-      : null,
   }
 }
 

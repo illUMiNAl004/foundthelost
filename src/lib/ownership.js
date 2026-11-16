@@ -6,6 +6,15 @@
 // in theory; for a campus lost & found the goal is to stop casual false claims, not spies.
 
 const VERIFIED_KEY = 'ftl-verified-v1'
+
+/** Items whose owner can be checked against a real identifier. Keyed by canonical item id.
+ *  A water bottle has nothing a stranger couldn't guess, so it gets no check. */
+export const OWNERSHIP_RULES = {
+  card: { label: 'bank card', question: 'Last 4 digits on the card', askOwner: 'Last 4 digits of your card', askFinder: 'Last 4 digits on the card (for the owner check)', hint: '4 digits', pattern: /^\d{4}$/, placeholder: '····', inputMode: 'numeric', maxLength: 4 },
+  ucard: { label: 'UCard / ID', question: 'SPIRE ID on the card', askOwner: 'Your 8-digit SPIRE ID', askFinder: 'SPIRE ID printed on the card (for the owner check)', hint: '8 digits', pattern: /^\d{8}$/, placeholder: '12345678', inputMode: 'numeric', maxLength: 8 },
+}
+export const ruleFor = (itemId) => (itemId && OWNERSHIP_RULES[itemId]) || null
+export const validIdentifier = (rule, value) => !!rule && rule.pattern.test(String(value || '').replace(/\s+/g, ''))
 const STOP = new Set(['the', 'and', 'with', 'from', 'that', 'this', 'has', 'its', 'for', 'one', 'two'])
 
 export function normalizeAnswer(s = '') {
@@ -34,18 +43,25 @@ export async function sealChallenge(ch) {
     question: String(ch.question).trim(),
     hash: await sha256(full),
     tokenHashes: await Promise.all(tokens.map(sha256)),
-    hint: `${tokens.length || 1} word${tokens.length > 1 ? 's' : ''}`,
+    hint: ch.hint || `${tokens.length || 1} word${tokens.length > 1 ? 's' : ''}`,
   }
 }
 
-/** Seal the challenge inside a draft's vision attributes (returns a new attributes object). */
+/** Seal everything secret in a draft's attributes: the finder's `challenge` {question, answer}
+ *  and the owner's `proof` {answer}. Returns a new attributes object holding hashes only. */
 export async function sealAttributes(attributes) {
-  const v = attributes?.vision
-  if (!v?.challenge) return attributes
-  const sealed = await sealChallenge(v.challenge)
-  const { challenge: _drop, ...rest } = v
-  return { ...attributes, vision: sealed ? { ...rest, challenge: sealed } : rest }
+  if (!attributes) return attributes
+  const out = { ...attributes }
+  if (out.challenge?.answer) out.challenge = await sealChallenge(out.challenge)
+  if (out.proof?.answer) {
+    const sealed = await sealChallenge({ question: 'proof', answer: out.proof.answer })
+    if (sealed) out.proof = { hash: sealed.hash }; else delete out.proof
+  }
+  const v = out.vision
+  if (v?.challenge) { const sealed = await sealChallenge(v.challenge); const { challenge: _drop, ...rest } = v; out.vision = sealed ? { ...rest, challenge: sealed } : rest }
+  return out
 }
+export const needsSealing = (attributes) => !!(attributes?.challenge?.answer || attributes?.proof?.answer || attributes?.vision?.challenge?.answer)
 
 /** Does `reply` satisfy a sealed challenge? Exact normalized match, or every answer token present. */
 export async function checkAnswer(sealed, reply) {
@@ -59,14 +75,17 @@ export async function checkAnswer(sealed, reply) {
   return sealed.tokenHashes.every((h) => have.has(h))
 }
 
-/** The owner's own lost description already names the detail → no need to ask. */
-export async function autoVerify(sealed, lostDescription) {
+/** The owner already proved it: their lost report carries the same identifier (equal hash),
+ *  or their description names the detail → no need to ask. */
+export async function autoVerify(sealed, lostDescription, lostProof) {
+  if (!sealed?.hash) return false
+  if (lostProof?.hash && lostProof.hash === sealed.hash) return true
   if (!sealed?.tokenHashes?.length || !lostDescription) return false
   const have = new Set(await Promise.all(answerTokens(lostDescription).map(sha256)))
   return sealed.tokenHashes.every((h) => have.has(h))
 }
 
-export const challengeOf = (item) => item?.attributes?.vision?.challenge || null
+export const challengeOf = (item) => item?.attributes?.challenge || item?.attributes?.vision?.challenge || null
 const verifiedKey = (item) => item?.matchId || item?.id
 function readVerified() { try { return new Set(JSON.parse(localStorage.getItem(VERIFIED_KEY) || '[]')) } catch { return new Set() } }
 export function isVerified(item) { return readVerified().has(verifiedKey(item)) }

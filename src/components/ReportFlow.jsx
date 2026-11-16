@@ -7,6 +7,7 @@ import SnapFill from './SnapFill.jsx'
 import PlacePicker from './PlacePicker.jsx'
 import MiniMap from './MiniMap.jsx'
 import { CAMPUS_PLACES } from '../data/campusPlaces.js'
+import { ruleFor, validIdentifier } from '../lib/ownership.js'
 
 // IDs, bank cards and keys are never shown to anyone but a verified owner
 const SENSITIVE_ITEMS = new Set(['ucard', 'card', 'keys'])
@@ -66,7 +67,13 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation, onPlaceP
       animate={{ opacity: 1, y: 0 }}
       className="mt-3 space-y-3 rounded-2xl border border-lime/30 bg-lime/[0.07] p-3"
     >
-      <p className="text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">A few details sharpen the match ✨</p>
+      <p className="text-[12.5px] font-semibold text-slate-600 dark:text-slate-300">{askColor ? 'Add a colour — it is the fastest way to sharpen a match 🎨' : 'A few details sharpen the match ✨'}</p>
+      {askColor && (
+        <div className="rounded-xl border border-coral/40 bg-coral/10 p-2.5">
+          <p className="mb-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.07em] text-coral">what colour is it?</p>
+          <div className="flex flex-wrap gap-1.5">{COLOR_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</div>
+        </div>
+      )}
 
       {askWhich && (
         <Row label={`which ${parsed.ambiguousPlace.label}?`}>
@@ -85,9 +92,39 @@ function RefineDetails({ parsed, text, onAdd, noLocation, onNoLocation, onPlaceP
         <PlacePicker compact value={null} onChange={onPlacePick} onCoords={(c) => onPlacePick({ name: 'Pinned spot', emoji: '📍', coords: c, source: 'device' })} placeholder="or search any place — “woo”, “du bois”, a dorm…" />
       )}
       {askWhen && <Row label="when?">{WHEN_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
-      {askColor && <Row label="color?">{COLOR_OPTS.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askBrand && <Row label="brand?">{brands.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
       {askMaterial && <Row label="material?">{materials.map((o) => <Chip key={o} label={o} onClick={() => onAdd(o)} />)}</Row>}
+    </motion.div>
+  )
+}
+
+// Items with a real identifier (bank card → last 4 digits, UCard → SPIRE ID) get an owner
+// check. The finder types it from the item in hand; the owner types what they remember.
+// Stored as a hash only, never the number.
+function IdentifierField({ rule, value, onChange, side }) {
+  if (!rule) return null
+  const ok = validIdentifier(rule, value)
+  const empty = !String(value || '').trim()
+  return (
+    <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} className="mt-3 rounded-2xl border border-grape/40 bg-grape/10 p-3">
+      <div className="flex items-start gap-2.5">
+        <span className="text-lg">🗝️</span>
+        <div className="min-w-0 flex-1">
+          <p className="mono-label !text-grape">:: owner check · {rule.label}</p>
+          <p className="mt-1 text-[13.5px] font-semibold">{side === 'found' ? rule.askFinder : rule.askOwner}</p>
+          <input
+            value={value}
+            onChange={(e) => onChange(e.target.value.replace(/[^0-9]/g, '').slice(0, rule.maxLength))}
+            inputMode={rule.inputMode} placeholder={rule.placeholder} maxLength={rule.maxLength} autoComplete="off"
+            className={`mt-2 w-full rounded-xl border bg-white/90 px-3 py-2 font-mono text-[16px] tracking-[0.2em] outline-none dark:bg-slate-800/80 ${empty || ok ? 'border-ink/15 focus:border-grape dark:border-white/15' : 'border-coral'}`}
+          />
+          <p className="mt-1.5 text-[11px] text-slate-500 dark:text-slate-400">
+            {side === 'found'
+              ? 'Only the real owner knows this. The exact spot and photo stay hidden until they match it. Stored as a fingerprint, never the number.'
+              : 'Optional, but it unlocks a match instantly. Stored as a fingerprint, never the number.'}
+          </p>
+        </div>
+      </div>
     </motion.div>
   )
 }
@@ -179,10 +216,16 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const [snap, setSnap] = useState(null) // Snap & Fill result: { vision, photo, coords, place, … }
   const [noLocation, setNoLocation] = useState(false)
   const [instant, setInstant] = useState(null) // best match found the moment the report was saved
+  const [foundIdent, setFoundIdent] = useState('') // finder's identifier (last 4 digits / SPIRE ID)
+  const [lostIdent, setLostIdent] = useState('') // owner's identifier
 
   const isFound = mode === 'found'
   const lost = useMemo(() => parseDescription(lostText), [lostText])
   const found = useMemo(() => parseDescription(foundText), [foundText])
+  const foundItemId = found.spans.find((sp) => sp.type === 'item')?.payload?.id || snap?.vision?.itemId || null
+  const lostItemId = lost.spans.find((sp) => sp.type === 'item')?.payload?.id || null
+  const foundRule = ruleFor(foundItemId)
+  const lostRule = ruleFor(lostItemId)
 
   // append a detail word (from a follow-up chip) to the description if not already there
   const addWord = (setter) => (w) => setter((prev) => (wordPresent(prev, w) ? prev : `${prev.trim()} ${w}`.trim()))
@@ -307,6 +350,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   />
                   <ChipRow parsed={found} onApply={addWord(setFoundText)} />
                   <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
+                  <IdentifierField rule={foundRule} value={foundIdent} onChange={setFoundIdent} side="found" />
                 </>
               ) : isFound ? (
                 <>
@@ -328,6 +372,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                       />
                       <ChipRow parsed={found} onApply={addWord(setFoundText)} />
                       <RefineDetails parsed={found} text={foundText} onAdd={addWord(setFoundText)} noLocation={noLocation || !!snap.coords || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
+                      <IdentifierField rule={foundRule} value={foundIdent} onChange={setFoundIdent} side="found" />
                     </motion.div>
                   )}
                 </>
@@ -346,6 +391,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   />
                   <ChipRow parsed={lost} onApply={addWord(setLostText)} />
                   <RefineDetails parsed={lost} text={lostText} onAdd={addWord(setLostText)} noLocation={noLocation || !!placeOverride} onNoLocation={() => setNoLocation(true)} onPlacePick={pickPlace} />
+                  <IdentifierField rule={lostRule} value={lostIdent} onChange={setLostIdent} side="lost" />
                 </>
               )}
 
@@ -355,8 +401,8 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   whileTap={{ scale: 0.97 }}
                   disabled={
                     isFound
-                      ? foundMode === 'photo' ? !snap?.vision || foundText.trim().length < 3 : foundText.trim().length < 8
-                      : lostText.trim().length < 8
+                      ? (foundMode === 'photo' ? !snap?.vision || foundText.trim().length < 3 : foundText.trim().length < 8) || (!!foundRule && !validIdentifier(foundRule, foundIdent))
+                      : lostText.trim().length < 8 || (!!lostRule && !!lostIdent.trim() && !validIdentifier(lostRule, lostIdent))
                   }
                   onClick={() => setStep(1)}
                   className="btn-lime mt-5 w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition disabled:opacity-35"
@@ -424,6 +470,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         coords: lostCoords,
                         occurredAt: inferOccurredAt(lostText),
                         sensitive: isSensitive(lost),
+                        attributes: lostRule && validIdentifier(lostRule, lostIdent) ? { proof: { answer: lostIdent } } : undefined,
                       })).then((r) => setInstant(r?.instantMatch || null)).catch(() => {})
                     }
                     setStep(isFound ? 2 : totalSteps)
@@ -471,7 +518,10 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                         coords: foundCoords,
                         occurredAt: inferOccurredAt(foundText) || (snap ? new Date().toISOString() : null),
                         sensitive: !!v?.sensitive || isSensitive(found),
-                        attributes: v ? { vision: v } : undefined,
+                        attributes: {
+                          ...(v ? { vision: v } : {}),
+                          ...(foundRule && validIdentifier(foundRule, foundIdent) ? { challenge: { question: foundRule.question, answer: foundIdent, hint: foundRule.hint } } : {}),
+                        },
                         photo: snap?.photo?.blob || null, // compressed JPEG Blob → private Storage via the api layer
                       })).then((r) => setInstant(r?.instantMatch || null)).catch(() => {})
                       setStep(3)
@@ -539,14 +589,14 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   </span>
                 </motion.div>
               )}
-              {isFound && snap?.vision?.challenge?.question && (
+              {isFound && foundRule && validIdentifier(foundRule, foundIdent) && (
                 <motion.p
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   transition={{ delay: 0.45 }}
                   className="mx-auto mt-3 max-w-[32ch] text-[12.5px] text-slate-500 dark:text-slate-400"
                 >
-                  🗝️ Before the exact spot unlocks, owners must answer: <span className="font-semibold text-ink dark:text-white">“{snap.vision.challenge.question}”</span>
+                  🗝️ Before the exact spot unlocks, the owner must match: <span className="font-semibold text-ink dark:text-white">{foundRule.question.toLowerCase()}</span>
                 </motion.p>
               )}
               {isFound && (

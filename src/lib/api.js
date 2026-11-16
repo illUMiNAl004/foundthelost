@@ -5,7 +5,7 @@ import { MY_ITEMS, COMMUNITY_FOUND, CAMPUS_CENTER } from '../data/mockItems.js'
 import { findMatches } from './matching.js'
 import { parseDescription } from './extract.js'
 import { learnTerms, hydrateLearned, resetLexicon } from './lexicon.js'
-import { sealAttributes } from './ownership.js'
+import { sealAttributes, needsSealing } from './ownership.js'
 
 // Grow the self-learning dictionary from a real report's wording (best-effort). In live
 // mode we also mirror each unknown term to the shared `lexicon` table so the database
@@ -157,7 +157,7 @@ export async function getMyItems(user) {
     // run the engine: my lost reports vs everything found — the community pool PLUS the found
     // reports made on this device, so a solo walkthrough (snap a find, then report it lost) matches
     const matches = findMatches(myLost, [...(db.community || []), ...myFound])
-      .map((m) => ({ ...m, lostDetails: myLost.find((l) => l.id === m.matchedLostId)?.details || '' }))
+      .map((m) => { const l = myLost.find((x) => x.id === m.matchedLostId); return { ...m, lostDetails: l?.details || '', lostProof: l?.attributes?.proof || null } })
     const matchedLostIds = new Set(matches.map((m) => m.matchedLostId))
 
     // lost reports that didn't match stay in the Lost tab
@@ -191,6 +191,7 @@ export async function getMyItems(user) {
       matchId: m.id,
       matchedLostId: m.lost.id,
       lostDetails: m.lost.description || '',
+      lostProof: m.lost.attributes?.proof || null,
       finderId: m.found.user_id, // the person who found it — for messaging
     }))
   const matchedLostIds = new Set((matchRows || []).map((m) => m.lost?.id))
@@ -214,7 +215,7 @@ const blobToDataUrl = (blob) => new Promise((resolve, reject) => {
 export async function createItem(user, draft) {
   const learned = learnFromDraft(user, draft)
   // proof-of-ownership answer → hashes before anything is stored (both modes)
-  if (draft.attributes?.vision?.challenge) draft = { ...draft, attributes: await sealAttributes(draft.attributes) }
+  if (needsSealing(draft.attributes)) draft = { ...draft, attributes: await sealAttributes(draft.attributes) }
   if (useDemo(user)) {
     const db = loadDemo()
     const jitter = () => (Math.random() - 0.5) * 0.006
@@ -257,7 +258,7 @@ export async function createItem(user, draft) {
     if (draft.kind === 'lost') {
       const pool = [...(db.community || []), ...db.items.filter((it) => it.kind === 'found').map(withTime)]
       const [best] = findMatches([withTime(item)], pool, { bestOnly: true })
-      if (best) instantMatch = { ...best, lostDetails: item.details }
+      if (best) instantMatch = { ...best, lostDetails: item.details, lostProof: item.attributes?.proof || null }
     } else {
       const myLost = db.items.filter((it) => it.kind === 'lost').map(withTime)
       const [best] = findMatches(myLost, [withTime(item)], { bestOnly: true })

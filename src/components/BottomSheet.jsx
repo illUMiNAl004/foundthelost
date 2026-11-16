@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import ItemCard from './ItemCard.jsx'
 import { STATUS_STYLES, TABS } from '../data/mockItems'
@@ -50,9 +50,9 @@ function OwnerCheck({ item, onVerified }) {
   useEffect(() => {
     let live = true
     setReply(''); setTries(0)
-    if (isVerified(item)) { setState('ok'); return }
+    if (isVerified(item)) { setState((prev) => (prev === 'auto' ? prev : 'ok')); return }
     setState('ask')
-    autoVerify(challenge, item.lostDetails).then((yes) => { if (live && yes) { markVerified(item); setState('auto'); onVerified?.(item) } })
+    autoVerify(challenge, item.lostDetails, item.lostProof).then((yes) => { if (live && yes) { markVerified(item); setState('auto'); onVerified?.(item) } })
     return () => { live = false }
   }, [item, challenge, onVerified])
   if (!challenge) return null
@@ -69,7 +69,7 @@ function OwnerCheck({ item, onVerified }) {
       <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-3 flex items-center gap-2.5 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3.5 py-2.5">
         <span className="text-lg">✅</span>
         <span className="text-[13px] font-semibold text-emerald-700 dark:text-emerald-300">
-          {state === 'auto' ? 'Verified from your description — exact spot and photo unlocked.' : 'Verified — exact spot and photo unlocked.'}
+          {state === 'auto' ? 'Verified from your report — exact spot and photo unlocked.' : 'Verified — exact spot and photo unlocked.'}
         </span>
       </motion.div>
     )
@@ -85,7 +85,8 @@ function OwnerCheck({ item, onVerified }) {
             <input
               value={reply}
               onChange={(e) => { setReply(e.target.value); if (state === 'wrong') setState('ask') }}
-              placeholder="Your answer"
+              placeholder={/digit/i.test(challenge.hint) ? challenge.hint : 'Your answer'}
+              inputMode={/digit/i.test(challenge.hint) ? 'numeric' : 'text'}
               autoCapitalize="off" autoCorrect="off" spellCheck={false}
               className="min-w-0 flex-1 rounded-xl border border-ink/15 bg-white/90 px-3 py-2 text-[14px] outline-none focus:border-grape dark:border-white/15 dark:bg-slate-800/80"
             />
@@ -98,7 +99,7 @@ function OwnerCheck({ item, onVerified }) {
               {tries >= 3 ? "That's not it. Still yours? Message the finder and describe it — they decide." : "That's not it — try again."}
             </div>
           )}
-          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">The finder's photo gave us this question. Exact location and photo stay hidden until it's answered; chat is always open.</div>
+          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">This item carries an identifier only its owner knows. Exact location and photo stay hidden until it matches; chat is always open.</div>
         </div>
       </div>
     </motion.form>
@@ -140,7 +141,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
   const expanded = open || !!selected
   const [unlockTick, setUnlockTick] = useState(0) // re-render after a successful owner check
   const locked = !!selected && selected.kind === 'match' && !!challengeOf(selected) && !isVerified(selected) && unlockTick >= 0
-  const handleVerified = (item) => { setUnlockTick((t) => t + 1); onVerified?.(item) }
+  const handleVerified = useCallback((item) => { setUnlockTick((t) => t + 1); onVerified?.(item) }, [onVerified])
   const tabItems = items.filter((it) => it.kind === tab)
 
   return (
