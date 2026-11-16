@@ -7,8 +7,8 @@ const KEY = 'ftl-waitlist-v1' // { code, email, position } for the person who jo
 const DEMO_DB = 'ftl-waitlist-demo'
 const DEMO_BASE = 1284 // matches the landing-page ticker
 
-/** Waitlist mode is on unless explicitly disabled — flip VITE_WAITLIST=off at launch. */
-export const WAITLIST_ON = (import.meta.env.VITE_WAITLIST || 'on').toLowerCase() !== 'off'
+/** Launched: the waitlist is OFF unless VITE_WAITLIST=on is set explicitly (hype phase is over). */
+export const WAITLIST_ON = (import.meta.env.VITE_WAITLIST || 'off').toLowerCase() === 'on'
 
 /** First N sign-ups are founding members (badge + karma head start + giveaway entry). */
 export const FOUNDING_CAP = 500

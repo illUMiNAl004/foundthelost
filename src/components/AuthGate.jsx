@@ -28,8 +28,9 @@ export default function AuthGate({ onDone, onWaitlist }) {
         await requestPasswordReset(email)
         setSent('reset')
       } else {
-        await signUp(name, email, password)
-        setSent('signup')
+        const r = await signUp(name, email, password)
+        if (r?.signedIn) onDone()
+        else setSent('signup')
       }
     } catch (err) {
       if (err.code === 'invite') setInvite(true)
@@ -133,13 +134,13 @@ export default function AuthGate({ onDone, onWaitlist }) {
                 Enter your UMass email and we'll send a link to reset your password.
               </p>
             )}
-            {mode === 'signup' && WAITLIST_ON && (
+            {mode === 'signup' && (
               <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
-                Invite-only while we pilot — use the email you were approved with.
+                {WAITLIST_ON ? 'Invite-only while we pilot — use the email you were approved with.' : 'Your @umass.edu email and a password (8+ characters). That is it.'}
               </p>
             )}
             {mode === 'signup' && (
-              <input className={field} placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} required />
+              <input className={field} placeholder="Name (optional)" value={name} onChange={(e) => setName(e.target.value)} />
             )}
             <input
               className={field}

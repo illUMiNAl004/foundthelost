@@ -10,7 +10,7 @@ function devApi(env) {
     configureServer(server) {
       // hype phase: the landing page is locked behind the waitlist cover (mirrors scripts/lock-landing.mjs)
       server.middlewares.use((req, res, next) => {
-        if (req.url?.split('?')[0] === '/landing.html' && (env.VITE_WAITLIST || 'on').toLowerCase() !== 'off') {
+        if (req.url?.split('?')[0] === '/landing.html' && (env.VITE_WAITLIST || 'off').toLowerCase() === 'on') {
           res.statusCode = 302; res.setHeader('Location', '/'); return res.end()
         }
         next()

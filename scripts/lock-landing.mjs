@@ -3,7 +3,7 @@
 // Runs after `vite build` (see package.json). Set VITE_WAITLIST=off at launch to publish it.
 import { rmSync, existsSync } from 'node:fs'
 
-const on = (process.env.VITE_WAITLIST || 'on').toLowerCase() !== 'off'
+const on = (process.env.VITE_WAITLIST || 'off').toLowerCase() === 'on'
 const file = new URL('../dist/landing.html', import.meta.url)
 if (on && existsSync(file)) {
   rmSync(file)

@@ -94,6 +94,8 @@ export function AuthProvider({ children }) {
 
   const signUp = async (name, email, password) => {
     if (!UMASS_EMAIL.test(email)) throw new Error('Use your @umass.edu email')
+    // name is optional: fall back to the email handle ("tsaria" → "Tsaria")
+    if (!name || !name.trim()) { const h = email.split('@')[0].replace(/[._-]+/g, ' ').trim(); name = h ? h[0].toUpperCase() + h.slice(1) : 'Student' }
     if (password.length < 8) throw new Error('Password needs 8+ characters')
     if (!isLive) throw new Error('No database connected — use demo mode below')
     // ask the gate first so the refusal is a friendly screen, not a generic auth error.
@@ -105,12 +107,15 @@ export function AuthProvider({ children }) {
       if (e.code === 'invite') throw e // rpc missing (007 not run yet) → fall through to the trigger
     }
     try {
-      const { error } = await supabase.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email,
         password,
         options: { data: { name }, emailRedirectTo: window.location.origin },
       })
       if (error) throw error
+      // with email confirmation off, Supabase returns a session straight away → signed in
+      if (data?.session?.user) setUser(toUser(data.session.user))
+      return { signedIn: !!data?.session }
     } catch (e) {
       const msg = friendly(e)
       throw msg === INVITE_MSG ? inviteError() : new Error(msg)
