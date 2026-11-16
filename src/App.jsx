@@ -12,6 +12,7 @@ import ChatPanel from './components/ChatPanel.jsx'
 import LeaderboardPanel from './components/LeaderboardPanel.jsx'
 import Waitlist from './components/Waitlist.jsx'
 import { WAITLIST_ON } from './lib/waitlist.js'
+import { isLocked } from './lib/ownership.js'
 import { useAuth } from './hooks/useAuth.jsx'
 import { getMyItems, createItem, getKarma, getConversations, openConversation } from './lib/api.js'
 
@@ -120,9 +121,10 @@ export default function App() {
 
   const handleSelect = (item) => {
     setSelected(item)
-    if (item.lostAt) mapApi.current?.drawRoute(item)
-    else mapApi.current?.flyTo(item.coords)
+    if (item.lostAt && !isLocked(item)) mapApi.current?.drawRoute(item)
+    else mapApi.current?.flyTo(item.coords, isLocked(item) ? 15.2 : undefined) // locked: zoomed out, no exact spot
   }
+  const handleVerified = (item) => { if (item.lostAt) mapApi.current?.drawRoute(item) }
   const handleBack = () => {
     setSelected(null)
     mapApi.current?.resetView()
@@ -234,6 +236,7 @@ export default function App() {
           onReport={setFlow}
           onMessage={handleMessageMatch}
           onReturned={refresh}
+          onVerified={handleVerified}
         />
       )}
 

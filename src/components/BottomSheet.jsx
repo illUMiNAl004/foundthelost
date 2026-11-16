@@ -4,12 +4,13 @@ import ItemCard from './ItemCard.jsx'
 import { STATUS_STYLES, TABS } from '../data/mockItems'
 import { useAuth } from '../hooks/useAuth.jsx'
 import { markReturned, getPhotoUrl } from '../lib/api.js'
+import { challengeOf, isVerified, markVerified, checkAnswer, autoVerify } from '../lib/ownership.js'
 import { useEffect } from 'react'
 
 const SPRING = { type: 'spring', stiffness: 300, damping: 32 }
 
 // the finder's photo (private bucket → short-lived signed URL; data URL in demo)
-function ItemPhoto({ item }) {
+function ItemPhoto({ item, locked = false }) {
   const { user } = useAuth()
   const [url, setUrl] = useState(null)
   useEffect(() => {
@@ -20,13 +21,87 @@ function ItemPhoto({ item }) {
   }, [user, item])
   if (!url) return null
   return (
-    <motion.img
-      initial={{ opacity: 0, scale: 0.98 }}
-      animate={{ opacity: 1, scale: 1 }}
-      src={url}
-      alt={item.name}
-      className="mt-4 max-h-44 w-full rounded-2xl border border-white/80 object-cover shadow-sm dark:border-white/10"
-    />
+    <div className="relative mt-4 overflow-hidden rounded-2xl border border-white/80 shadow-sm dark:border-white/10">
+      <motion.img
+        initial={{ opacity: 0, scale: 0.98 }}
+        animate={{ opacity: 1, scale: locked ? 1.08 : 1, filter: locked ? 'blur(18px)' : 'blur(0px)' }}
+        transition={{ duration: 0.5 }}
+        src={url}
+        alt={locked ? 'photo hidden until you prove it is yours' : item.name}
+        className="max-h-44 w-full object-cover"
+      />
+      {locked && (
+        <div className="absolute inset-0 grid place-items-center bg-ink/10">
+          <span className="rounded-full bg-white/85 px-3 py-1.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.08em] text-ink shadow-sm">🔒 photo unlocks after the owner check</span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Proof of ownership: the finder's photo produced a question only the owner can answer.
+// The answer exists only as hashes; we hash the reply and compare. If the owner's own lost
+// description already names the detail, we pass them without asking.
+function OwnerCheck({ item, onVerified }) {
+  const challenge = challengeOf(item)
+  const [state, setState] = useState(() => (isVerified(item) ? 'ok' : 'ask')) // ask | checking | wrong | ok | auto
+  const [reply, setReply] = useState('')
+  const [tries, setTries] = useState(0)
+  useEffect(() => {
+    let live = true
+    setReply(''); setTries(0)
+    if (isVerified(item)) { setState('ok'); return }
+    setState('ask')
+    autoVerify(challenge, item.lostDetails).then((yes) => { if (live && yes) { markVerified(item); setState('auto'); onVerified?.(item) } })
+    return () => { live = false }
+  }, [item, challenge, onVerified])
+  if (!challenge) return null
+  const submit = async (e) => {
+    e?.preventDefault()
+    if (!reply.trim() || state === 'checking') return
+    setState('checking')
+    const ok = await checkAnswer(challenge, reply)
+    if (ok) { markVerified(item); setState('ok'); onVerified?.(item) }
+    else { setTries((t) => t + 1); setState('wrong') }
+  }
+  if (state === 'ok' || state === 'auto') {
+    return (
+      <motion.div initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-3 flex items-center gap-2.5 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3.5 py-2.5">
+        <span className="text-lg">✅</span>
+        <span className="text-[13px] font-semibold text-emerald-700 dark:text-emerald-300">
+          {state === 'auto' ? 'Verified from your description — exact spot and photo unlocked.' : 'Verified — exact spot and photo unlocked.'}
+        </span>
+      </motion.div>
+    )
+  }
+  return (
+    <motion.form onSubmit={submit} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} className="mt-3 rounded-2xl border border-grape/40 bg-grape/10 p-3.5">
+      <div className="flex items-start gap-2.5">
+        <span className="text-lg">🗝️</span>
+        <div className="min-w-0 flex-1">
+          <div className="mono-label !text-grape">:: prove it's yours · {challenge.hint}</div>
+          <div className="mt-1 text-[14px] font-semibold">{challenge.question}</div>
+          <div className="mt-2.5 flex gap-2">
+            <input
+              value={reply}
+              onChange={(e) => { setReply(e.target.value); if (state === 'wrong') setState('ask') }}
+              placeholder="Your answer"
+              autoCapitalize="off" autoCorrect="off" spellCheck={false}
+              className="min-w-0 flex-1 rounded-xl border border-ink/15 bg-white/90 px-3 py-2 text-[14px] outline-none focus:border-grape dark:border-white/15 dark:bg-slate-800/80"
+            />
+            <button type="submit" disabled={!reply.trim() || state === 'checking'} className="btn-lime rounded-xl px-4 py-2 font-mono text-[11.5px] font-bold uppercase tracking-[0.08em] disabled:opacity-40">
+              {state === 'checking' ? '…' : 'unlock'}
+            </button>
+          </div>
+          {state === 'wrong' && (
+            <div className="mt-2 text-[12px] font-medium text-coral">
+              {tries >= 3 ? "That's not it. Still yours? Message the finder and describe it — they decide." : "That's not it — try again."}
+            </div>
+          )}
+          <div className="mt-2 text-[11px] text-slate-500 dark:text-slate-400">The finder's photo gave us this question. Exact location and photo stay hidden until it's answered; chat is always open.</div>
+        </div>
+      </div>
+    </motion.form>
   )
 }
 
@@ -38,7 +113,7 @@ const KIND_TILES = {
   sensitive: 'bg-grape/50',
 }
 
-export default function BottomSheet({ items, selected, onSelect, onBack, onReport, onMessage, onReturned }) {
+export default function BottomSheet({ items, selected, onSelect, onBack, onReport, onMessage, onReturned, onVerified }) {
   const { user } = useAuth()
   const [open, setOpen] = useState(false)
   const [tab, setTab] = useState('match')
@@ -63,6 +138,9 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
   }
 
   const expanded = open || !!selected
+  const [unlockTick, setUnlockTick] = useState(0) // re-render after a successful owner check
+  const locked = !!selected && selected.kind === 'match' && !!challengeOf(selected) && !isVerified(selected) && unlockTick >= 0
+  const handleVerified = (item) => { setUnlockTick((t) => t + 1); onVerified?.(item) }
   const tabItems = items.filter((it) => it.kind === tab)
 
   return (
@@ -176,7 +254,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 <div className="min-w-0 flex-1">
                   <h2 className="font-display text-xl font-bold tracking-tight">{selected.name}</h2>
                   <div className="mt-0.5 text-[13px] text-slate-500 dark:text-slate-400">
-                    {selected.place} · {selected.time}
+                    {locked ? `Near ${selected.place}` : selected.place} · {selected.time}{locked && <span className="ml-1.5 font-mono text-[9.5px] font-bold uppercase tracking-[0.06em] text-grape">· exact spot locked</span>}
                   </div>
                   <span
                     className={`mt-2 inline-block rounded-full border px-2.5 py-[3px] font-mono text-[10px] font-bold uppercase tracking-[0.08em] ${STATUS_STYLES[selected.status] || ''}`}
@@ -186,12 +264,12 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 </div>
               </div>
 
-              <ItemPhoto item={selected} />
+              <ItemPhoto item={selected} locked={locked} />
 
               {selected.kind === 'match' && (
                 <div className="mt-4 rounded-2xl border border-lime bg-lime/20 p-3.5 dark:bg-lime/10">
                   <div className="flex items-center justify-between">
-                    <span className="mono-label !text-ink/70 dark:!text-lime/80">:: lost → found path on map</span>
+                    <span className="mono-label !text-ink/70 dark:!text-lime/80">{locked ? ':: match · unlock to see the path' : ':: lost → found path on map'}</span>
                     <span className="font-mono text-[13px] font-bold">{selected.match}%</span>
                   </div>
                   <div className="mt-2 h-2 overflow-hidden rounded-full bg-ink/10 dark:bg-white/10">
@@ -219,6 +297,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                   )}
                 </div>
               )}
+              {selected.kind === 'match' && <OwnerCheck item={selected} onVerified={handleVerified} />}
 
               {selected.kind === 'lost' && (
                 <div className="mt-4 flex items-center gap-3 rounded-2xl border border-coral/30 bg-coral/10 p-3.5">

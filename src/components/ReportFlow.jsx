@@ -539,6 +539,16 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                   </span>
                 </motion.div>
               )}
+              {isFound && snap?.vision?.challenge?.question && (
+                <motion.p
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.45 }}
+                  className="mx-auto mt-3 max-w-[32ch] text-[12.5px] text-slate-500 dark:text-slate-400"
+                >
+                  🗝️ Before the exact spot unlocks, owners must answer: <span className="font-semibold text-ink dark:text-white">“{snap.vision.challenge.question}”</span>
+                </motion.p>
+              )}
               {isFound && (
                 <motion.div
                   initial={{ opacity: 0, y: 10 }}
