@@ -57,6 +57,7 @@ Schema (every key required; use null when unknown, never guess):
   "material_id": one of [${MATERIAL_IDS.join(', ')}] or null,
   "distinctive": 1 short phrase of unique identifying marks (stickers, scratches, engravings, charms, case colour), or null,
   "visible_text": any legible text/names/initials on the object, or null,
+  "identifier": for a bank/credit/debit card, the LAST 4 digits of the card number if legible (digits only, e.g. "4821"); for a student ID / UCard, the 8-digit SPIRE ID if legible; otherwise null,
   "sensitive": true if it is an ID card, bank/credit card, passport, license, keys, or shows a person's name/face,
   "confidence": number 0–1, how sure you are about item_id,
   "caption": one natural sentence a student would text to describe it (colour + brand + item + distinguishing mark).
@@ -69,7 +70,7 @@ Rules:
 - earbuds (AirPods, in-ear) and headphones (over-ear) are DIFFERENT — never confuse them.
 - An AirPods case with no earbuds visible is still "earbuds" unless it is clearly empty → "airpods_case".
 - A student ID / UCard / driver's license → item_id "ucard", sensitive true.
-- Do NOT read or transcribe card numbers, ID numbers or full names into visible_text — write "has a name" or "has an ID number" instead.
+- Do NOT transcribe full card numbers, ID numbers or full names into visible_text, distinctive or caption — write "has a name" or "has a card number" instead. The only digits you may return are the "identifier" field (last 4 of a card, or an 8-digit SPIRE ID).
 - If several objects are visible, describe the most prominent found object, not the surface or hand holding it.
 - If you truly cannot tell what it is, item_id null, confidence ≤ 0.3, and still write the best caption you can.`
 
@@ -245,7 +246,13 @@ export function normalize(raw) {
   const brandId = inSet(raw.brand_id, BRAND_IDS)
   const materialId = inSet(raw.material_id, MATERIAL_IDS)
   const sensitiveById = itemId === 'ucard' || itemId === 'card' || itemId === 'keys'
+  // the owner-check identifier the photo shows: last 4 of a card, or an 8-digit SPIRE ID. Never a full number.
+  const digits = String(raw.identifier ?? '').replace(/\D/g, '')
+  const identifier = itemId === 'card' && digits.length >= 4 ? digits.slice(-4) : itemId === 'ucard' && digits.length === 8 ? digits : null
+  // belt and braces: no long digit runs anywhere else (card numbers, IDs)
+  const scrub = (v) => (typeof v === 'string' ? v.replace(/(?:\d[ -]?){8,}/g, '').replace(/\s{2,}/g, ' ').trim() : v)
   return {
+    identifier,
     itemId,
     itemLabel: str(raw.item_label, 60) || item?.label || null,
     category: item?.category || inSet(raw.category, CATEGORIES) || 'other',
@@ -255,11 +262,11 @@ export function normalize(raw) {
     brandLabel: brandId ? BRAND_BY_ID[brandId].label : null,
     brandText: str(raw.brand_text, 60),
     materialId,
-    distinctive: str(raw.distinctive, 140),
-    visibleText: str(raw.visible_text, 80),
+    distinctive: str(scrub(raw.distinctive), 140),
+    visibleText: str(scrub(raw.visible_text), 80),
     sensitive: raw.sensitive === true || sensitiveById,
     confidence: clamp01(raw.confidence),
-    caption: str(raw.caption, 240),
+    caption: str(scrub(raw.caption), 240),
   }
 }
 

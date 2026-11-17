@@ -235,6 +235,8 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
   const handleSnap = (r) => {
     setSnap(r)
     if (r?.vision?.description && !foundText.trim()) setFoundText(r.vision.description)
+    // the photo already shows the owner-check identifier (last 4 of a card, SPIRE ID) → prefill, finder can still edit
+    if (r?.vision?.identifier && !foundIdent) setFoundIdent(r.vision.identifier)
     if (!r) setFoundText('')
   }
 

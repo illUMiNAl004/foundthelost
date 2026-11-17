@@ -181,6 +181,7 @@ export default function SnapFill({ onResult, onFallbackToText }) {
               ['Material', v.materialId ? v.materialId.replace('_mat', '')[0].toUpperCase() + v.materialId.replace('_mat', '').slice(1) : null],
               ['Distinctive', v.distinctive],
               ['Text on it', v.visibleText],
+              ['Number on it', v.identifier ? (v.itemId === 'card' ? `•••• ${v.identifier}` : v.identifier) : null, v.identifier ? 'owner check' : null],
               ['Location', result.place ? `${result.place.emoji} ${result.place.name}${result.placeMeters != null ? ` · ${result.placeMeters}m` : ''}` : result.coords ? 'GPS pin (off the named-place list)' : null, result.coordsSource === 'photo' ? 'from photo' : result.coordsSource === 'device' ? 'from your phone' : null],
             ].filter(([, val]) => val).map(([label, val, note], i) => (
               <motion.div
