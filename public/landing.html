@@ -31,6 +31,152 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
 </style>
 </head>
 <body>
+<!-- OPENING ANIMATION ("globe slap"): coral sticker cover with a dot globe; peels off onto the page.
+     Plays on every fresh load (not on back/forward, not with reduced motion). Tap, click or any key skips to the peel. -->
+<div id="ftl-intro" style="position:fixed;inset:0;z-index:300;background:#F0604D;cursor:pointer">
+  <canvas style="position:absolute;inset:0;width:100%;height:100%;display:block"></canvas>
+  <button aria-label="Skip intro" style="position:absolute;right:18px;bottom:18px;padding:9px 15px;border-radius:999px;border:1.5px solid rgba(255,255,255,.7);background:rgba(28,27,23,.18);color:#fff;font:700 11px 'JetBrains Mono',monospace;letter-spacing:.12em;cursor:pointer">SKIP</button>
+</div>
+<script>
+/* foundthelost intro: "globe slap". Slot machine + dot globe + sticker slap shockwave + sticker peel.
+   window.FTLGlobeSlap = { DUR, REVEAL, PEEL, draw(ctx, W, H, t) }  (t in ms; draws nothing once t > DUR) */
+(function () {
+  const INK = '#1c1b17', LIME = '#D9F154', CORAL = '#F0604D';
+  const cl = (v) => (v < 0 ? 0 : v > 1 ? 1 : v), P = (t, a, b) => cl((t - a) / (b - a));
+  const io = (t) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2), out = (t) => 1 - Math.pow(1 - t, 3);
+  const rr = (c, x, y, w, h, r) => { c.beginPath(); c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r); c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath(); };
+  const words = ['keys', 'ucard', 'wallet', 'hoodie', 'charger', 'hydro flask', 'airpods?'];
+  const N = 1100, dots = [];
+  for (let i = 0; i < N; i++) {
+    const y = 1 - (2 * (i + 0.5)) / N, r = Math.sqrt(1 - y * y), th = i * 2.39996;
+    dots.push({ p: [Math.cos(th) * r, y, Math.sin(th) * r], spark: i % 19 === 7 });
+  }
+  const T = { slotEnd: 1450, slap: [1550, 1830], peel: [2450, 3550] };
+  const DUR = 3600, REVEAL = 2520;
+
+  function clipHalf(poly, f) {
+    const o = [];
+    for (let i = 0; i < poly.length; i++) {
+      const a = poly[i], b = poly[(i + 1) % poly.length], fa = f(a), fb = f(b);
+      if (fa >= 0) o.push(a);
+      if ((fa >= 0) !== (fb >= 0)) { const s = fa / (fa - fb); o.push({ x: a.x + (b.x - a.x) * s, y: a.y + (b.y - a.y) * s }); }
+    }
+    return o;
+  }
+  const path = (c, p) => { c.beginPath(); p.forEach((q, i) => (i ? c.lineTo(q.x, q.y) : c.moveTo(q.x, q.y))); c.closePath(); };
+
+  function draw(c, W, H, t) {
+    c.clearRect(0, 0, W, H);
+    if (t > DUR) return;
+    const S = Math.min(W, H), k = S / 380;
+    const R = Math.min(W * 0.62, H * 0.52), C = { x: W / 2, y: H * 1.02 };
+    const fs = Math.min(W * 0.13, H * 0.15), lh = fs * 1.15;
+    const top = C.y - R, lostY = Math.max(fs * 1.1, top * 0.46), slotY = lostY + fs * 1.22;
+    const I = { x: W / 2, y: Math.max(slotY + fs * 1.3, C.y - R * 0.74) }; // where the sticker lands, on the globe
+
+    // peel geometry (bottom-right corner folds back toward top-left)
+    const diag = Math.hypot(W, H), v = { x: -W / diag, y: -H / diag }, BR = { x: W, y: H };
+    const d = io(P(t, T.peel[0], T.peel[1])) * diag * 1.75;
+    const f = (q) => (q.x - BR.x) * v.x + (q.y - BR.y) * v.y - d;
+    const rect = [{ x: 0, y: 0 }, { x: W, y: 0 }, { x: W, y: H }, { x: 0, y: H }];
+
+    c.save();
+    if (d > 0) { path(c, clipHalf(rect, f)); c.clip(); }
+    c.fillStyle = CORAL; c.fillRect(0, 0, W, H);
+
+    // the globe: dots rising from the bottom edge, spinning
+    const rise = out(P(t, 0, 900)), Cy = C.y + (1 - rise) * R * 0.5;
+    const ry = 0.4 + t * 0.0008, cy = Math.cos(ry), sy = Math.sin(ry), tl = -0.32, cx = Math.cos(tl), sx = Math.sin(tl);
+    const ti = T.slap[1], age = (t - ti) / 1000, front = age * S * 1.5;
+    // soft disc so the globe reads as a sphere
+    const g = c.createRadialGradient(C.x - R * 0.3, Cy - R * 0.4, R * 0.1, C.x, Cy, R * 1.05);
+    g.addColorStop(0, 'rgba(255,255,255,0.16)'); g.addColorStop(1, 'rgba(255,255,255,0.03)');
+    c.fillStyle = g; c.beginPath(); c.arc(C.x, Cy, R, 0, 7); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.35)'; c.lineWidth = 1.5 * k; c.stroke();
+    for (const dt of dots) {
+      let x = dt.p[0] * cy + dt.p[2] * sy, z = -dt.p[0] * sy + dt.p[2] * cy;
+      const y = dt.p[1] * cx - z * sx; z = dt.p[1] * sx + z * cx;
+      if (z < -0.15) continue;
+      let px = C.x + x * R, py = Cy - y * R;
+      const depth = (z + 1) / 2;
+      let col = 'rgba(255,244,236,' + (0.18 + depth * 0.62) * rise + ')', rad = (0.9 + depth * 1.5) * k;
+      if (t > ti) { // shockwave from the sticker
+        const dx = px - I.x, dy = py - I.y, dist = Math.hypot(dx, dy) || 1, off = dist - front;
+        if (Math.abs(off) < S * 0.14) {
+          const amp = S * 0.03 * Math.exp(-age * 1.8) * Math.cos((off / (S * 0.14)) * Math.PI * 0.5);
+          px += (dx / dist) * amp; py += (dy / dist) * amp;
+          if (Math.abs(off) < S * 0.035) { col = LIME; rad *= 1.5; }
+        }
+        if (dt.spark && dist < front && z > 0.05) { col = LIME; rad = (2.2 + depth * 1.6) * k; }
+      }
+      c.fillStyle = col; c.beginPath(); c.arc(px, py, rad, 0, 7); c.fill();
+    }
+
+    // slot machine
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    c.fillStyle = '#fff'; c.font = '800 ' + fs + 'px Inter, system-ui, sans-serif';
+    c.globalAlpha = P(t, 0, 250); c.fillText('lost your', W / 2, lostY); c.globalAlpha = 1;
+    const kk = out(P(t, 60, T.slotEnd)) * 13, idx = Math.floor(kk), fr = kk - idx;
+    c.save(); c.beginPath(); c.rect(0, slotY - lh * 0.46, W, lh * 0.92); c.clip(); c.fillStyle = INK;
+    c.fillText(words[idx % 7], W / 2, slotY - fr * lh);
+    if (idx < 13) c.fillText(words[(idx + 1) % 7], W / 2, slotY + (1 - fr) * lh);
+    c.restore();
+
+    // "found." sticker slaps onto the globe
+    const s = P(t, T.slap[0], T.slap[1]);
+    if (s > 0) {
+      const w = P(t, T.slap[1], T.slap[1] + 420), sq = Math.sin(w * Math.PI * 2.5) * (1 - w) * 0.09, scl = 1 + 1.7 * (1 - out(s));
+      c.save(); c.translate(I.x, I.y); c.rotate(-0.1); c.scale(scl * (1 + sq), scl * (1 - sq)); c.globalAlpha = cl(s * 3);
+      c.font = '800 ' + fs * 0.92 + 'px Inter, system-ui, sans-serif';
+      const tw = c.measureText('found.').width + fs * 0.7, th = fs * 1.15;
+      c.shadowColor = 'rgba(28,27,23,.35)'; c.shadowBlur = 18 * k; c.shadowOffsetY = 8 * k;
+      rr(c, -tw / 2, -th / 2, tw, th, th * 0.28); c.fillStyle = LIME; c.fill(); c.shadowColor = 'transparent';
+      c.strokeStyle = '#fff'; c.lineWidth = 5 * k; c.stroke(); c.fillStyle = INK; c.fillText('found.', 0, fs * 0.03);
+      c.restore();
+    }
+    c.restore();
+
+    // the peeled flap
+    if (d > 0) {
+      const peel = clipHalf(rect, (q) => -f(q));
+      if (peel.length > 2) {
+        const fl = peel.map((q) => { const s2 = f(q); return { x: q.x - 2 * s2 * v.x, y: q.y - 2 * s2 * v.y }; });
+        const m = { x: BR.x + v.x * d, y: BR.y + v.y * d }, gr = c.createLinearGradient(m.x, m.y, m.x + v.x * S * 0.6, m.y + v.y * S * 0.6);
+        gr.addColorStop(0, '#f6d9d2'); gr.addColorStop(0.35, '#fff6f1'); gr.addColorStop(1, '#f4e3db');
+        c.save(); c.shadowColor = 'rgba(28,27,23,.3)'; c.shadowBlur = 26 * k; c.shadowOffsetX = -6 * k; c.shadowOffsetY = -6 * k;
+        path(c, fl); c.fillStyle = gr; c.fill(); c.restore();
+      }
+    }
+  }
+  window.FTLGlobeSlap = { DUR, REVEAL, PEEL: T.peel[0], draw };
+})();
+
+(function () {
+  const el = document.getElementById('ftl-intro'), cv = el.querySelector('canvas'), skipBtn = el.querySelector('button');
+  const nav = (performance.getEntriesByType && performance.getEntriesByType('navigation')[0]) || {};
+  const done = () => { window.__ftlIntro = false; document.documentElement.style.overflow = ''; el.remove(); };
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches || nav.type === 'back_forward') { done(); return; }
+  window.__ftlIntro = true; document.documentElement.style.overflow = 'hidden';
+  const A = window.FTLGlobeSlap; let t0 = 0, raf = 0;
+  const skip = () => { if (!t0) return; const t = performance.now() - t0; if (t < A.PEEL) t0 = performance.now() - A.PEEL; };
+  el.addEventListener('click', skip); skipBtn.addEventListener('click', (e) => { e.stopPropagation(); skip(); });
+  addEventListener('keydown', skip, { once: true });
+  addEventListener('pageshow', (e) => { if (e.persisted && el.isConnected) { cancelAnimationFrame(raf); done(); } });
+  const frame = (now) => {
+    const t = now - t0, dpr = Math.min(devicePixelRatio || 1, 2), w = innerWidth, h = innerHeight;
+    if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+    const c = cv.getContext('2d'); c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    A.draw(c, w, h, t);
+    if (t >= A.PEEL && window.__ftlIntro) { window.__ftlIntro = false; skipBtn.style.display = 'none'; } // hero reveals start as the peel begins
+    if (t > A.DUR) { done(); return; }
+    raf = requestAnimationFrame(frame);
+  };
+  const go = () => { if (t0) return; t0 = performance.now(); el.style.background = 'transparent'; raf = requestAnimationFrame(frame); };
+  // give Inter a moment to load so the slot machine doesn't start in a fallback font
+  try { document.fonts.load('800 60px Inter').then(go, go); } catch (e) { go(); }
+  setTimeout(go, 600);
+})();
+</script>
 <script>
   // Always open at the hero: no browser scroll restoration, no stale #how / #feed hash from a previous visit.
   try { history.scrollRestoration = 'manual' } catch (e) {}
@@ -750,7 +896,7 @@ class Component {
 
   // ---------- reveals / magnetic ----------
   wireReveals() {
-    if (this.reduced) return;
+    if (this.reduced || window.__ftlIntro) return; // hold the hero's entrance until the intro starts peeling
     if (!this.revealIO) {
       this.revealIO = new IntersectionObserver((ents) => {
         for (const en of ents) {
@@ -937,6 +1083,7 @@ class Component {
   doFlipCheck(now) {
     if (this.reduced) return;
     const el = this.q('[data-flip]'); if (!el) return;
+    if (window.__ftlIntro !== false && document.getElementById('ftl-intro')) { this._flipNext = now + 2600; return; } // keep 'airpods?' (where the intro lands) until the page is shown
     if (!this._flipNext) { this._flipNext = now + 1900; this._flipIdx = 0; this._flipWords = ['airpods?', 'ucard?', 'keys?', 'wallet?', 'flask?']; }
     if (now < this._flipNext || this._flipBusy) return;
     this._flipBusy = true;
