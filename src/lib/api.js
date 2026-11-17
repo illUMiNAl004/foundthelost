@@ -335,14 +335,15 @@ export async function createItem(user, draft) {
     const col = draft.kind === 'lost' ? 'lost_item_id' : 'found_item_id'
     const { data: m } = await supabase
       .from('matches')
-      .select('id, score, breakdown, status, lost:items!matches_lost_item_id_fkey(*), found:items!matches_found_item_id_fkey(*)')
+      .select('id, lost_item_id, found_item_id, score, breakdown, status, lost:items!matches_lost_item_id_fkey(*), found:items!matches_found_item_id_fkey(*)')
       .eq(col, data.id).eq('status', 'pending')
       .order('score', { ascending: false }).limit(1).maybeSingle()
     if (m) {
       if (draft.kind === 'lost' && m.found) {
         instantMatch = { ...rowToUiItem(m.found), kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, lostAt: [m.lost?.lng ?? coords[0], m.lost?.lat ?? coords[1]], matchId: m.id, matchedLostId: data.id, finderId: m.found.user_id }
       } else if (draft.kind === 'found') {
-        instantMatch = { ...created, kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, matchId: m.id, counterpart: m.lost ? rowToUiItem(m.lost) : null }
+        // matchedLostId lets 'See the match →' open the scored card for the finder too; lostAt only if RLS let us read the owner's row
+        instantMatch = { ...created, kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, matchId: m.id, matchedLostId: m.lost_item_id, lostAt: m.lost ? [m.lost.lng, m.lost.lat] : null, counterpart: m.lost ? rowToUiItem(m.lost) : null }
       }
     }
   } catch (e) { console.warn('instant match lookup failed:', e?.message) }
