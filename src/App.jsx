@@ -14,7 +14,7 @@ import Waitlist from './components/Waitlist.jsx'
 import { WAITLIST_ON } from './lib/waitlist.js'
 import { isLocked } from './lib/ownership.js'
 import { useAuth } from './hooks/useAuth.jsx'
-import { getMyItems, createItem, getKarma, getConversations, openConversation } from './lib/api.js'
+import { getMyItems, isStage, createItem, getKarma, getConversations, openConversation } from './lib/api.js'
 
 function RecoveryTicker() {
   const mv = useMotionValue(0)
@@ -23,6 +23,7 @@ function RecoveryTicker() {
     const controls = animate(mv, 1284, { duration: 2, ease: [0.16, 1, 0.3, 1], delay: 0.6 })
     return controls.stop
   }, [mv])
+  if (isStage()) return null // stage mode: no invented numbers on screen
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
@@ -152,9 +153,10 @@ export default function App() {
     try {
       const { instantMatch, learned } = await createItem(user, draft)
       refresh()
-      // hold any instant match until the user closes the success screen (lost side only:
-      // a finder can't open the owner's report)
-      pendingMatchRef.current = draft.kind === 'lost' && instantMatch ? instantMatch : null
+      // hold any instant match until the user closes the success screen. Lost side: the found
+      // item. Found side (sandbox only — live finders can't read the owner's report): the match
+      // card for the item just reported, so the finder sees the score the owner will see.
+      pendingMatchRef.current = instantMatch && (draft.kind === 'lost' || instantMatch.matchedLostId) ? instantMatch : null
       if (learned?.length) {
         setToast({ words: learned.map((l) => l.label) })
         setTimeout(() => setToast(null), 5000)

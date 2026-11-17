@@ -614,7 +614,7 @@ export default function ReportFlow({ mode, onClose, onSubmit }) {
                 onClick={onClose}
                 className="btn-lime mt-6 w-full rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em]"
               >
-                {instant && !isFound ? 'See the match →' : 'Back to the map'}
+                {instant ? 'See the match →' : 'Back to the map'}
               </motion.button>
             </motion.div>
           )}

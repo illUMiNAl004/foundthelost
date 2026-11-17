@@ -29,6 +29,16 @@ async function hydrateLexicon() {
 }
 
 const DB_KEY = 'ftl-demo-db-v3'
+// STAGE MODE — a clean sandbox for live pitches: no seeded reports, chats or karma, so the
+// only matches on screen are the ones made on this device. Toggle with ?stage=1 / ?stage=0
+// (sticky in localStorage). Resetting the demo keeps the flag.
+const STAGE_KEY = 'ftl-stage'
+try {
+  const q = new URLSearchParams(window.location.search).get('stage')
+  if (q === '1' || q === 'on') { localStorage.setItem(STAGE_KEY, '1'); localStorage.removeItem(DB_KEY) }
+  else if (q === '0' || q === 'off') { localStorage.removeItem(STAGE_KEY); localStorage.removeItem(DB_KEY) }
+} catch { /* no window / storage */ }
+export const isStage = () => { try { return localStorage.getItem(STAGE_KEY) === '1' } catch { return false } }
 
 // A demo user (from "explore the demo") has no Supabase session, so even on the
 // live site their data must use the local demo store — otherwise RLS silently
@@ -53,6 +63,10 @@ function emojiFor(name, description, category) {
 /* ------------------------------------------------------------------ */
 
 function seedDemo() {
+  if (isStage()) return { items: [], community: [], nextId: 100, karma: 0, conversations: [], leaderboard: seedDemoFull().leaderboard }
+  return seedDemoFull()
+}
+function seedDemoFull() {
   return {
     items: MY_ITEMS, // your own lost + found
     community: COMMUNITY_FOUND, // found by others (matchable pool)

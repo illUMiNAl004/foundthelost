@@ -165,7 +165,7 @@ export function scorePair(lost, found) {
   if (sem < SEM_FLOOR) composite = Math.min(composite, 0.5)
   // soft penalties — a weaker but real match still surfaces, just lower:
   composite *= cc.penalty // neighbor colour (black↔navy) pulls the score down
-  if (L.itemId && F.itemId && L.itemId !== F.itemId) composite *= 0.9 // neighbour item type (case vs earbuds)
+  if (L.itemId && F.itemId && L.itemId !== F.itemId) composite *= 0.8 // neighbour item type (case vs earbuds) — needs place + time + colour to cross 55
   if (L.materialIds.size && F.materialIds.size && ![...L.materialIds].some((m) => F.materialIds.has(m))) composite *= 0.9
   if (L.brandId && F.brandId && L.brandId === F.brandId) composite = Math.min(1, composite + 0.05) // brand agreement boost
 

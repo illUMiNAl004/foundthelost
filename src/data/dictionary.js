@@ -89,7 +89,8 @@ export const COLOR_NEIGHBORS = {
 export const ITEM_NEIGHBORS = {
   earbuds: ['airpods_case'],
   water_bottle: ['coffee_cup'],
-  wallet: ['card', 'ucard'],
+  // NOTE: wallet is deliberately NOT a neighbour of card/ucard — a found wallet and a lost
+  // UCard are different objects (Nov 16: a lost wallet matched a seeded UCard at 70+).
   card: ['ucard'],
   notebook: ['textbook'],
   pen: ['pencil_case'],
