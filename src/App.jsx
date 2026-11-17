@@ -23,7 +23,8 @@ function RecoveryTicker() {
     const controls = animate(mv, 1284, { duration: 2, ease: [0.16, 1, 0.3, 1], delay: 0.6 })
     return controls.stop
   }, [mv])
-  if (isStage()) return null // stage mode: no invented numbers on screen
+  // Hidden until the count is real (a live tally of returned matches). The old animated 1,284 was a placeholder.
+  if (isStage() || true) return null
   return (
     <motion.div
       initial={{ opacity: 0, y: 14 }}
