@@ -23,6 +23,7 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
   @media (max-width: 760px) {
     .ftl-nav { left: 12px !important; right: 12px !important; transform: none !important; justify-content: space-between !important; gap: 12px !important; }
     .ftl-nav-links { display: none !important; }
+    .ftl-nav-us { display: inline-block !important; }
   }
   @media (max-width: 360px) {
     .ftl-nav a[href="/app"] { padding: 8px 12px !important; font-size: 10.5px !important; }
@@ -50,7 +51,9 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
       <a href="#privacy" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">PRIVACY</a>
       <a href="#feed" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">EXAMPLES</a>
       <a href="#campus" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">CAMPUS MAP</a>
+      <a href="#team" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">US</a>
     </div>
+    <a href="#team" class="ftl-nav-us" style="display:none;margin-left:auto;color:#6b6757;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.12em">US</a>
     <a href="/app" data-magnetic="1" style="padding:9px 18px;border-radius:999px;background:#D9F154;border:2px solid #fff;color:#1c1b17;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;letter-spacing:0.1em;text-decoration:none;box-shadow:0 6px 16px rgba(28,27,23,0.16);display:inline-block">OPEN THE APP</a>
   </nav>
 
@@ -254,8 +257,34 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
           <div style="font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:60px;letter-spacing:-0.04em;line-height:1;color:#1c1b17">$0.20</div>
           <div style="margin-top:8px;font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:0.14em;color:#8b8674">PER STUDENT · PER YEAR</div>
         </div>
-        <a href="#top" data-magnetic="1" style="padding:15px 28px;border-radius:999px;background:#1c1b17;border:2px solid #fff;color:#F5F1E6;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:0.1em;text-decoration:none;box-shadow:0 12px 30px rgba(28,27,23,0.3);display:inline-block;white-space:nowrap">BRING IT TO CAMPUS</a>
+        <a href="#team" data-magnetic="1" style="padding:15px 28px;border-radius:999px;background:#1c1b17;border:2px solid #fff;color:#F5F1E6;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:700;letter-spacing:0.1em;text-decoration:none;box-shadow:0 12px 30px rgba(28,27,23,0.3);display:inline-block;white-space:nowrap">BRING IT TO CAMPUS</a>
       </div>
+    </div>
+  </section>
+
+  <!-- TEAM / CONTACT -->
+  <section id="team" data-screen-label="Team" style="position:relative;z-index:2;max-width:1180px;margin:0 auto;padding:130px 24px 0">
+    <p data-reveal="0" style="margin:0;text-align:center;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;letter-spacing:0.2em;color:#6b6757"><span style="color:#2BB673">::</span> US</p>
+    <h2 data-reveal="60" style="margin:16px auto 0;max-width:680px;text-align:center;font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:clamp(34px,4.4vw,54px);letter-spacing:-0.03em;line-height:1.04;text-wrap:balance">built by two students who <span style="position:relative;display:inline-block;padding:0 6px"><span style="position:absolute;left:0;right:0;top:54%;height:42%;background:#D9F154;border-radius:5px"></span><span style="position:relative">lose stuff too</span></span></h2>
+    <p data-reveal="120" style="max-width:540px;margin:16px auto 0;text-align:center;font-size:16px;line-height:1.6;color:#565243;text-wrap:pretty">Questions, feedback, or want foundthelost on your campus? Email either of us, we actually reply.</p>
+    <div data-reveal="180" style="margin-top:46px;display:flex;gap:22px;flex-wrap:wrap;justify-content:center">
+        <div style="flex:1;min-width:260px;max-width:400px;border-radius:28px;background:rgba(252,250,242,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.95);box-shadow:0 18px 44px rgba(28,27,23,0.08);padding:30px 30px 28px;text-align:left">
+          <span style="width:52px;height:52px;border-radius:16px;background:#D9F154;border:2px solid #fff;box-shadow:0 6px 16px rgba(28,27,23,0.14);display:inline-flex;align-items:center;justify-content:center;font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:19px;color:#1c1b17">TS</span>
+          <div style="margin-top:18px;font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:24px;letter-spacing:-0.02em">Tanishq Saria</div>
+          <div style="margin-top:4px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:0.14em;color:#8b8674">CO-FOUNDER · UMASS AMHERST</div>
+          <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px">
+            <a href="mailto:tsaria@umass.edu" style="display:inline-flex;align-items:center;gap:9px;width:fit-content;max-width:100%;padding:8px 14px;border-radius:999px;background:#fff;border:1px solid rgba(28,27,23,0.08);color:#1c1b17;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;overflow-wrap:anywhere" style-hover="border-color:#D9F154;background:#fbfdf0">✉ tsaria@umass.edu</a>
+            <a href="mailto:iamtanishqsaria@gmail.com" style="display:inline-flex;align-items:center;gap:9px;width:fit-content;max-width:100%;padding:8px 14px;border-radius:999px;background:#fff;border:1px solid rgba(28,27,23,0.08);color:#1c1b17;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;overflow-wrap:anywhere" style-hover="border-color:#D9F154;background:#fbfdf0">✉ iamtanishqsaria@gmail.com</a>
+          </div>
+        </div>
+        <div style="flex:1;min-width:260px;max-width:400px;border-radius:28px;background:rgba(252,250,242,0.92);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.95);box-shadow:0 18px 44px rgba(28,27,23,0.08);padding:30px 30px 28px;text-align:left">
+          <span style="width:52px;height:52px;border-radius:16px;background:#A78BFA;border:2px solid #fff;box-shadow:0 6px 16px rgba(28,27,23,0.14);display:inline-flex;align-items:center;justify-content:center;font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:19px;color:#1c1b17">NA</span>
+          <div style="margin-top:18px;font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:24px;letter-spacing:-0.02em">Naysa Arora</div>
+          <div style="margin-top:4px;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:0.14em;color:#8b8674">CO-FOUNDER · UMASS AMHERST</div>
+          <div style="margin-top:18px;display:flex;flex-direction:column;gap:8px">
+            <a href="mailto:narora@umass.edu" style="display:inline-flex;align-items:center;gap:9px;width:fit-content;max-width:100%;padding:8px 14px;border-radius:999px;background:#fff;border:1px solid rgba(28,27,23,0.08);color:#1c1b17;text-decoration:none;font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;overflow-wrap:anywhere" style-hover="border-color:#D9F154;background:#fbfdf0">✉ narora@umass.edu</a>
+          </div>
+        </div>
     </div>
   </section>
 
@@ -267,10 +296,15 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
     <div style="display:flex;gap:20px;margin-top:6px;flex-wrap:wrap;justify-content:center;font-family:'JetBrains Mono',monospace;font-size:10.5px;font-weight:600;letter-spacing:0.12em">
       <a href="#how" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">HOW IT WORKS</a>
       <a href="#privacy" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">PRIVACY</a>
-      <a href="#feed" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">LIVE FEED</a>
+      <a href="#feed" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">EXAMPLES</a>
       <a href="#universities" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">FOR UNIVERSITIES</a>
+      <a href="#team" style="color:#6b6757;text-decoration:none;white-space:nowrap" style-hover="color:#1c1b17">US</a>
     </div>
-    <div style="font-size:12px;color:#a59f8c;margin-top:8px">Built at UMass Amherst · © 2026 foundthelost</div>
+    <div style="margin-top:14px;display:flex;flex-direction:column;align-items:center;gap:7px;font-size:13px;line-height:1.5;color:#6b6757">
+      <div><strong style="color:#1c1b17">Tanishq Saria</strong> · <a href="mailto:tsaria@umass.edu" style="color:#6b6757;text-decoration:underline;text-underline-offset:3px" style-hover="color:#1c1b17">tsaria@umass.edu</a> · <a href="mailto:iamtanishqsaria@gmail.com" style="color:#6b6757;text-decoration:underline;text-underline-offset:3px" style-hover="color:#1c1b17">iamtanishqsaria@gmail.com</a></div>
+      <div><strong style="color:#1c1b17">Naysa Arora</strong> · <a href="mailto:narora@umass.edu" style="color:#6b6757;text-decoration:underline;text-underline-offset:3px" style-hover="color:#1c1b17">narora@umass.edu</a></div>
+    </div>
+    <div style="font-size:12px;color:#a59f8c;margin-top:8px">Built at UMass Amherst by Tanishq Saria &amp; Naysa Arora · © 2026 foundthelost</div>
   </footer>
 </div>
 

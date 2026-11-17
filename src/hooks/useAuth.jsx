@@ -19,6 +19,8 @@ function friendly(e) {
     return "Can't reach the server. Check your connection and try again."
   }
   if (/invalid login/i.test(m)) return 'Wrong email or password.'
+  // 011_restricted_access.sql bans accounts that aren't approved while access is closed
+  if (/banned/i.test(m)) return RESTRICTED_MSG
   if (/already registered|already exists/i.test(m)) return 'That email already has an account — sign in instead.'
   if (/email not confirmed/i.test(m)) return 'Confirm your email first — check your inbox (and spam) for the link.'
   if (/only @umass\.edu/i.test(m)) return 'Use your @umass.edu email'
@@ -29,6 +31,7 @@ function friendly(e) {
   return m
 }
 
+export const RESTRICTED_MSG = 'foundthelost is invite-only right now. Email tsaria@umass.edu if you need access.'
 export const INVITE_MSG = "Invite-only right now — you're on the list, we'll email you when your spot opens."
 const inviteError = () => Object.assign(new Error(INVITE_MSG), { code: 'invite' })
 
