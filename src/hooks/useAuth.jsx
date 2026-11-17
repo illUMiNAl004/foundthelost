@@ -16,7 +16,7 @@ const toUser = (u) => ({
 function friendly(e) {
   const m = (e && e.message) || String(e || '')
   if (/failed to fetch|networkerror|load failed|fetch/i.test(m)) {
-    return "Can't reach the server. The database may not be set up yet — try demo mode below."
+    return "Can't reach the server. Check your connection and try again."
   }
   if (/invalid login/i.test(m)) return 'Wrong email or password.'
   if (/already registered|already exists/i.test(m)) return 'That email already has an account — sign in instead.'
@@ -52,10 +52,8 @@ export function AuthProvider({ children }) {
     let done = false
     const finish = () => { if (!done) { done = true; setLoading(false) } }
 
-    // a sandbox (demo) user also exists in live mode — restore it unless a real session wins
-    const readDemo = () => { try { const raw = localStorage.getItem(DEMO_USER_KEY); return raw ? JSON.parse(raw) : null } catch { return null } }
-    const storedDemo = readDemo()
-    if (storedDemo) setUser(storedDemo)
+    // live mode: real accounts only. Any leftover sandbox user from earlier builds is dropped.
+    localStorage.removeItem(DEMO_USER_KEY)
 
     supabase.auth.getSession()
       .then(({ data }) => { if (data?.session?.user) { localStorage.removeItem(DEMO_USER_KEY); setUser(toUser(data.session.user)) } })
@@ -147,7 +145,7 @@ export function AuthProvider({ children }) {
   }
 
   const signInDemo = () => {
-    const demo = { id: 'demo-user', email: 'you@umass.edu', name: 'Tanishq', demo: true }
+    const demo = { id: 'demo-user', email: 'demo@umass.edu', name: 'Demo', demo: true }
     localStorage.setItem(DEMO_USER_KEY, JSON.stringify(demo))
     setUser(demo)
   }

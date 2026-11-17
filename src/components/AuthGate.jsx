@@ -193,26 +193,6 @@ export default function AuthGate({ onDone, onWaitlist }) {
               {mode === 'signin' ? 'New here? Create an account' : mode === 'forgot' ? '← Back to sign in' : 'Already have an account? Sign in'}
             </button>
 
-            {/* sandbox demo: always available (judges, curious students). In live mode the
-                demo user is sandboxed in localStorage and never touches the real database. */}
-            <>
-              <div className="flex items-center gap-3 py-1">
-                <span className="h-px flex-1 bg-ink/10 dark:bg-white/10" />
-                <span className="mono-label !text-[9.5px]">or</span>
-                <span className="h-px flex-1 bg-ink/10 dark:bg-white/10" />
-              </div>
-              <motion.button
-                type="button"
-                whileTap={{ scale: 0.97 }}
-                onClick={() => { signInDemo(); onDone() }}
-                className="w-full rounded-2xl border border-ink/15 bg-white/80 py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] backdrop-blur transition hover:bg-white dark:border-white/15 dark:bg-slate-800/70"
-              >
-                👀 try the demo — no account needed
-              </motion.button>
-              <p className="text-center text-[11px] text-slate-400">
-                {isLive ? 'A private sandbox on this device. Nothing you report here is saved to the real campus database.' : 'Demo mode — no database connected.'}
-              </p>
-            </>
           </form>
         )}
       </motion.div>
