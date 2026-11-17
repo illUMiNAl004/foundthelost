@@ -18,6 +18,16 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
 ::selection{background:rgba(217,241,84,0.55)}
 </style>
 
+<style>
+  /* phones: the full menu is wider than the screen — keep logo + "Open the app", drop the section links */
+  @media (max-width: 760px) {
+    .ftl-nav { left: 12px !important; right: 12px !important; transform: none !important; justify-content: space-between !important; gap: 12px !important; }
+    .ftl-nav-links { display: none !important; }
+  }
+  @media (max-width: 360px) {
+    .ftl-nav a[href="/app"] { padding: 8px 12px !important; font-size: 10.5px !important; }
+  }
+</style>
 </head>
 <body>
 <script>
@@ -30,15 +40,15 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
 <div id="ftl-root" style="position:relative;overflow-x:clip;background:#F5F1E6;color:#1c1b17">
 
   <!-- nav -->
-  <nav style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:24px;padding:9px 10px 9px 18px;border-radius:999px;background:rgba(252,250,242,0.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.95);box-shadow:0 10px 32px rgba(28,27,23,0.10), 0 1px 2px rgba(28,27,23,0.05);white-space:nowrap">
+  <nav class="ftl-nav" style="position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:50;display:flex;align-items:center;gap:24px;padding:9px 10px 9px 18px;border-radius:999px;background:rgba(252,250,242,0.88);backdrop-filter:blur(24px);-webkit-backdrop-filter:blur(24px);border:1px solid rgba(255,255,255,0.95);box-shadow:0 10px 32px rgba(28,27,23,0.10), 0 1px 2px rgba(28,27,23,0.05);white-space:nowrap">
     <a href="#top" style="display:flex;align-items:center;gap:9px;text-decoration:none;color:#1c1b17">
       <span style="width:24px;height:24px;border-radius:8px;background:#D9F154;border:2px solid #fff;box-shadow:0 3px 8px rgba(28,27,23,0.18);display:inline-flex;align-items:center;justify-content:center;font-size:12px">📍</span>
       <span style="font-family:'General Sans',Inter,sans-serif;font-weight:700;font-size:17px;letter-spacing:-0.02em">foundthelost</span>
     </a>
-    <div style="display:flex;align-items:center;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.12em">
+    <div class="ftl-nav-links" style="display:flex;align-items:center;gap:18px;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.12em">
       <a href="#how" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">HOW IT WORKS</a>
       <a href="#privacy" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">PRIVACY</a>
-      <a href="#feed" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">LIVE FEED</a>
+      <a href="#feed" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">EXAMPLES</a>
       <a href="#campus" style="color:#6b6757;text-decoration:none" style-hover="color:#1c1b17">CAMPUS MAP</a>
     </div>
     <a href="/app" data-magnetic="1" style="padding:9px 18px;border-radius:999px;background:#D9F154;border:2px solid #fff;color:#1c1b17;font-family:'JetBrains Mono',monospace;font-size:11.5px;font-weight:700;letter-spacing:0.1em;text-decoration:none;box-shadow:0 6px 16px rgba(28,27,23,0.16);display:inline-block">OPEN THE APP</a>
