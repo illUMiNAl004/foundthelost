@@ -20,6 +20,13 @@ body{font-family:Inter,system-ui,-apple-system,sans-serif;-webkit-font-smoothing
 
 </head>
 <body>
+<script>
+  // Always open at the hero: no browser scroll restoration, no stale #how / #feed hash from a previous visit.
+  try { history.scrollRestoration = 'manual' } catch (e) {}
+  if (location.hash) history.replaceState(null, '', location.pathname + location.search)
+  window.scrollTo(0, 0)
+  window.addEventListener('pageshow', function () { window.scrollTo(0, 0) })
+</script>
 <div id="ftl-root" style="position:relative;overflow-x:clip;background:#F5F1E6;color:#1c1b17">
 
   <!-- nav -->
