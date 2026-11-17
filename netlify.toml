@@ -31,6 +31,7 @@
   from = "/"
   to = "/landing.html"
   status = 200
+  force = true # index.html exists at /, so the rewrite must be forced
 
 [[redirects]]
   from = "/app"
