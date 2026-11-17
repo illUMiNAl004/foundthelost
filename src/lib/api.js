@@ -194,11 +194,13 @@ export async function getMyItems(user) {
     .from('matches')
     .select('id, score, breakdown, status, lost:items!matches_lost_item_id_fkey(*), found:items!matches_found_item_id_fkey(*)')
     .eq('status', 'pending')
+  // owner side: my lost report matched someone's find → the found item, with the owner's actions
   const matchItems = (matchRows || [])
     .filter((m) => m.lost?.user_id === user.id && m.found)
     .map((m) => ({
       ...rowToUiItem(m.found),
       kind: 'match',
+      role: 'owner',
       match: Math.round(m.score),
       breakdown: m.breakdown,
       lostAt: [m.lost.lng, m.lost.lat],
@@ -208,8 +210,24 @@ export async function getMyItems(user) {
       lostProof: m.lost.attributes?.proof || null,
       finderId: m.found.user_id, // the person who found it — for messaging
     }))
-  const matchedLostIds = new Set((matchRows || []).map((m) => m.lost?.id))
-  return [...matchItems, ...mine.filter((it) => !(it.kind === 'lost' && matchedLostIds.has(it.id)))]
+  // finder side: my find matched someone's lost report → my found item, with the finder's actions
+  const finderMatches = (matchRows || [])
+    .filter((m) => m.found?.user_id === user.id && m.lost && m.lost.user_id !== user.id)
+    .map((m) => ({
+      ...rowToUiItem(m.found),
+      kind: 'match',
+      role: 'finder',
+      match: Math.round(m.score),
+      breakdown: m.breakdown,
+      lostAt: [m.lost.lng, m.lost.lat],
+      matchId: m.id,
+      matchedLostId: m.lost.id,
+      ownerId: m.lost.user_id,
+      counterpart: rowToUiItem(m.lost),
+    }))
+  const matchedLostIds = new Set(matchItems.map((m) => m.matchedLostId))
+  const matchedFoundIds = new Set(finderMatches.map((m) => m.id))
+  return [...matchItems, ...finderMatches, ...mine.filter((it) => !(it.kind === 'lost' && matchedLostIds.has(it.id)) && !(it.kind === 'found' && matchedFoundIds.has(it.id)))]
 }
 
 const PHOTO_BUCKET = 'item-photos'
@@ -276,7 +294,7 @@ export async function createItem(user, draft) {
     } else {
       const myLost = db.items.filter((it) => it.kind === 'lost').map(withTime)
       const [best] = findMatches(myLost, [withTime(item)], { bestOnly: true })
-      if (best) instantMatch = { ...best, counterpart: myLost.find((l) => l.id === best.matchedLostId) || null }
+      if (best) instantMatch = { ...best, role: 'finder', counterpart: myLost.find((l) => l.id === best.matchedLostId) || null }
     }
     return { item, instantMatch, learned }
   }
@@ -343,7 +361,7 @@ export async function createItem(user, draft) {
         instantMatch = { ...rowToUiItem(m.found), kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, lostAt: [m.lost?.lng ?? coords[0], m.lost?.lat ?? coords[1]], matchId: m.id, matchedLostId: data.id, finderId: m.found.user_id }
       } else if (draft.kind === 'found') {
         // matchedLostId lets 'See the match →' open the scored card for the finder too; lostAt only if RLS let us read the owner's row
-        instantMatch = { ...created, kind: 'match', match: Math.round(m.score), breakdown: m.breakdown, matchId: m.id, matchedLostId: m.lost_item_id, lostAt: m.lost ? [m.lost.lng, m.lost.lat] : null, counterpart: m.lost ? rowToUiItem(m.lost) : null }
+        instantMatch = { ...created, kind: 'match', role: 'finder', match: Math.round(m.score), breakdown: m.breakdown, matchId: m.id, matchedLostId: m.lost_item_id, lostAt: m.lost ? [m.lost.lng, m.lost.lat] : null, ownerId: m.lost?.user_id || null, counterpart: m.lost ? rowToUiItem(m.lost) : null }
       }
     }
   } catch (e) { console.warn('instant match lookup failed:', e?.message) }
@@ -464,7 +482,9 @@ export async function openConversation(user, matchItem, firstMessage) {
   }
 
   // live: one conversation per match (unique index) — reuse it if it exists
-  if (!matchItem.matchId || !matchItem.finderId) throw new Error('This match can’t be messaged yet — refresh and try again.')
+  // the other person: the finder when I am the owner, the owner when I am the finder
+  const otherId = matchItem.role === 'finder' ? matchItem.ownerId : matchItem.finderId
+  if (!matchItem.matchId || !otherId) throw new Error('This match can’t be messaged yet — refresh and try again.')
   const findExisting = async () => {
     const { data } = await supabase.from('conversations').select('id').eq('match_id', matchItem.matchId).limit(1)
     return data?.[0]?.id
@@ -477,7 +497,7 @@ export async function openConversation(user, matchItem, firstMessage) {
         match_id: matchItem.matchId,
         item_label: label,
         participant_a: user.id,
-        participant_b: matchItem.finderId,
+        participant_b: otherId,
       })
       .select('id')
       .single()

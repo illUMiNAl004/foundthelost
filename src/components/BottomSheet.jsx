@@ -140,7 +140,8 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
 
   const expanded = open || !!selected
   const [unlockTick, setUnlockTick] = useState(0) // re-render after a successful owner check
-  const locked = !!selected && selected.kind === 'match' && !!challengeOf(selected) && !isVerified(selected) && unlockTick >= 0
+  const isFinder = !!selected && selected.kind === 'match' && selected.role === 'finder' // my own find, matched to someone's lost report
+  const locked = !!selected && selected.kind === 'match' && !isFinder && !!challengeOf(selected) && !isVerified(selected) && unlockTick >= 0
   const handleVerified = useCallback((item) => { setUnlockTick((t) => t + 1); onVerified?.(item) }, [onVerified])
   const tabItems = items.filter((it) => it.kind === tab)
 
@@ -298,7 +299,12 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                   )}
                 </div>
               )}
-              {selected.kind === 'match' && <OwnerCheck item={selected} onVerified={handleVerified} />}
+              {selected.kind === 'match' && !isFinder && <OwnerCheck item={selected} onVerified={handleVerified} />}
+              {isFinder && selected.counterpart && (
+                <div className="mt-3 rounded-2xl border border-emerald-400/40 bg-emerald-400/10 px-3.5 py-3 text-[13.5px] leading-snug">
+                  <span className="font-semibold">Someone reported this lost</span> {selected.counterpart.place ? `near ${selected.counterpart.place.replace(/^last seen:\s*/i, '')}` : 'on campus'} · {selected.counterpart.time}. They have been notified — only they can see your find.
+                </div>
+              )}
 
               {selected.kind === 'lost' && (
                 <div className="mt-4 flex items-center gap-3 rounded-2xl border border-coral/30 bg-coral/10 p-3.5">
@@ -321,10 +327,10 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                 {selected.kind === 'match' && (
                   <motion.button
                     whileTap={{ scale: 0.96 }}
-                    onClick={() => onMessage?.(selected, true)}
+                    onClick={() => onMessage?.(selected, isFinder ? 'finder' : 'owner')}
                     className="btn-lime flex-1 rounded-2xl py-3.5 font-mono text-[13px] font-bold uppercase tracking-[0.08em] transition"
                   >
-                    👋 this is mine — message finder
+                    {isFinder ? '👋 message the owner' : '👋 this is mine — message finder'}
                   </motion.button>
                 )}
                 {selected.kind === 'lost' && (
@@ -355,7 +361,7 @@ export default function BottomSheet({ items, selected, onSelect, onBack, onRepor
                   <motion.button
                     whileTap={{ scale: 0.96 }}
                     onClick={() => onMessage?.(selected, false)}
-                    title="Message the finder"
+                    title={isFinder ? 'Message the owner' : 'Message the finder'}
                     className="rounded-2xl border border-ink/15 bg-white/80 px-5 text-[15px] font-semibold backdrop-blur transition hover:bg-white dark:border-white/15 dark:bg-slate-800/70 dark:hover:bg-slate-800"
                   >
                     💬

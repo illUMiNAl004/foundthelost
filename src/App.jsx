@@ -138,9 +138,11 @@ export default function App() {
   // opening "this might be mine" message. No confirmation needed to start chatting.
   const handleMessageMatch = async (matchItem, claim) => {
     try {
-      const firstMessage = claim
-        ? `👋 Hey! I think the ${matchItem.name} you found might be mine. Can we meet up?`
-        : undefined
+      const firstMessage = claim === 'finder'
+        ? `👋 Hey! I found your ${matchItem.name}. When can I get it back to you?`
+        : claim
+          ? `👋 Hey! I think the ${matchItem.name} you found might be mine. Can we meet up?`
+          : undefined
       const convId = await openConversation(user, matchItem, firstMessage)
       setActiveConv(convId)
       setPanel('chat')
