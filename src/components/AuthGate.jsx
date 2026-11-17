@@ -89,7 +89,9 @@ export default function AuthGate({ onDone, onWaitlist }) {
             <div className="text-4xl">🎟️</div>
             <h2 className="font-display mt-3 text-xl font-bold">Not off the list yet</h2>
             <p className="mt-2 text-[14px] text-slate-500 dark:text-slate-400">
-              We're letting people in a few at a time. <b>{email}</b> is on the list — you'll get an email the moment your spot opens.
+              {onWaitlist
+                ? <>We're letting people in a few at a time. <b>{email}</b> is on the list — you'll get an email the moment your spot opens.</>
+                : <>Access is invite-only right now and <b>{email}</b> isn't approved yet. Email <a href="mailto:tsaria@umass.edu" className="underline">tsaria@umass.edu</a> if you need in.</>}
             </p>
             {onWaitlist && (
               <button
@@ -136,7 +138,7 @@ export default function AuthGate({ onDone, onWaitlist }) {
             )}
             {mode === 'signup' && (
               <p className="text-[12.5px] text-slate-500 dark:text-slate-400">
-                {WAITLIST_ON ? 'Invite-only while we pilot — use the email you were approved with.' : 'Your @umass.edu email and a password (8+ characters). That is it.'}
+                Invite-only while we pilot. Use the @umass.edu email you were approved with.
               </p>
             )}
             {mode === 'signup' && (
