@@ -10,6 +10,7 @@ const SPRING = { type: 'spring', stiffness: 320, damping: 28 }
 const UMASS = /^[a-z0-9._%+-]+@(students\.)?umass\.edu$/
 const BACK_TO = '/' // the public landing page in production
 const RETURN_AFTER = 12 // seconds on the "you're in" screen before we take them home
+const INTRO_MS = 2900 // opening shot length; tap to skip
 
 // fixed star field so it doesn't reshuffle on every render
 const STARS = Array.from({ length: 46 }, (_, i) => {
@@ -17,12 +18,12 @@ const STARS = Array.from({ length: 46 }, (_, i) => {
   return { x: r(1) * 100, y: r(2) * 62, s: 1 + Math.round(r(3) * 1.6), d: r(4) * 4, o: 0.25 + r(5) * 0.5 }
 })
 
-function Globe({ burst }) {
+function Globe({ burst, arriving }) {
   // meridians fake a slow spin by breathing their width out of phase
   const meridians = [0, 1, 2, 3, 4, 5]
   return (
     <div className="pointer-events-none absolute inset-x-0 bottom-0 flex justify-center" aria-hidden="true">
-      <div className="relative flex-none" style={{ width: 'min(1100px, 150vw)', aspectRatio: '1 / 1', marginBottom: 'calc(30vh - min(1100px, 150vw))' }}>
+      <div className={`relative flex-none ${arriving ? 'bk-arrive' : ''}`} style={{ width: 'min(1100px, 150vw)', aspectRatio: '1 / 1', marginBottom: 'calc(30vh - min(1100px, 150vw))' }}>
         <svg viewBox="0 0 400 400" className="absolute inset-0 h-full w-full">
           <defs>
             <radialGradient id="bk-sphere" cx="0.38" cy="0.22" r="0.85">
@@ -37,7 +38,7 @@ function Globe({ burst }) {
           </defs>
           <circle cx="200" cy="200" r="200" fill="url(#bk-halo)" />
           <circle cx="200" cy="200" r="180" fill="url(#bk-sphere)" />
-          <g clipPath="url(#bk-clip)" fill="none" stroke="rgba(217,241,84,0.22)" strokeWidth="0.7" strokeDasharray="0.1 3.2" strokeLinecap="round">
+          <g clipPath="url(#bk-clip)" fill="none" stroke="rgba(217,241,84,0.34)" strokeWidth="1.15" strokeDasharray="0.1 3.4" strokeLinecap="round">
             {[-120, -80, -40, 0, 40, 80, 120].map((dy) => (
               <ellipse key={dy} cx="200" cy={200 + dy} rx={Math.sqrt(180 * 180 - dy * dy)} ry={Math.sqrt(180 * 180 - dy * dy) * 0.16} />
             ))}
@@ -51,10 +52,15 @@ function Globe({ burst }) {
             ))}
           </g>
           <circle cx="200" cy="200" r="179.5" fill="none" stroke="rgba(245,241,230,0.18)" strokeWidth="0.8" />
+          {/* search orbit: a dashed ring with one bright dot sweeping round the globe */}
+          <g className="bk-orbit" style={{ transformOrigin: '200px 200px' }}>
+            <circle cx="200" cy="200" r="194" fill="none" stroke="rgba(217,241,84,0.3)" strokeWidth="0.9" strokeDasharray="1.5 5" />
+            <circle cx="200" cy="6" r="3.6" fill="#D9F154" />
+          </g>
         </svg>
 
         {/* the pin: something of yours, somewhere on campus */}
-        <div className="absolute left-1/2 top-[6.5%] -translate-x-1/2">
+        <div className={`absolute left-1/2 top-[6.5%] -translate-x-1/2 ${arriving ? 'bk-drop' : ''}`}>
           <span className={`bk-ping absolute left-1/2 top-[34px] h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border ${burst ? 'border-lime/60' : 'border-coral/60'}`} />
           <span className={`bk-ping absolute left-1/2 top-[34px] h-16 w-16 -translate-x-1/2 -translate-y-1/2 rounded-full border ${burst ? 'border-lime/60' : 'border-coral/60'}`} style={{ animationDelay: '1.3s' }} />
           <AnimatePresence>
@@ -96,6 +102,15 @@ export default function Beacon({ onSignIn }) {
   const [note, setNote] = useState('')
   const inputRef = useRef(null)
   const codeRef = useRef(null)
+  // opening shot: globe mid-sky → pin drops → globe sinks to the horizon → the page appears
+  const [intro, setIntro] = useState(() => {
+    try { return !window.matchMedia('(prefers-reduced-motion: reduce)').matches } catch { return false }
+  })
+  useEffect(() => {
+    if (!intro) return
+    const t = setTimeout(() => setIntro(false), INTRO_MS)
+    return () => clearTimeout(t)
+  }, [intro])
 
   useEffect(() => { verificationEnabled().then(setVerifyOn) }, [])
   useEffect(() => {
@@ -194,6 +209,7 @@ export default function Beacon({ onSignIn }) {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.6, ease: [0.76, 0, 0.24, 1] }}
+      onClick={intro ? () => setIntro(false) : undefined}
       className="fixed inset-0 z-[85] overflow-hidden bg-[#0d0c0a] text-[#F5F1E6]"
     >
       <style>{`
@@ -203,7 +219,28 @@ export default function Beacon({ onSignIn }) {
         .bk-ping { animation: bk-ping 2.6s cubic-bezier(.16,1,.3,1) infinite; }
         @keyframes bk-twinkle { 0%,100% { opacity: var(--o) } 50% { opacity: calc(var(--o) * 0.25) } }
         .bk-star { animation: bk-twinkle 3.6s ease-in-out infinite; }
-        @media (prefers-reduced-motion: reduce) { .bk-meridian, .bk-ping, .bk-star { animation: none } }
+        @keyframes bk-arrive {
+          0% { transform: translateY(calc(-20vh - min(550px, 75vw))) scale(0.42); opacity: 0 }
+          18% { opacity: 1 }
+          52% { transform: translateY(calc(-20vh - min(550px, 75vw))) scale(0.42) }
+          100% { transform: none; opacity: 1 }
+        }
+        .bk-arrive { animation: bk-arrive 2.6s cubic-bezier(.65,0,.25,1) both; transform-origin: 50% 50%; }
+        @keyframes bk-glow { 0%, 45% { filter: drop-shadow(0 0 60px rgba(217,241,84,0.45)) brightness(1.5) } 100% { filter: none } }
+        .bk-arrive > svg { animation: bk-glow 2.6s ease both; }
+        @keyframes bk-drop {
+          0%, 22% { transform: translate(-50%, -340px); opacity: 0 }
+          30% { opacity: 1 }
+          40% { transform: translate(-50%, 0) }
+          46% { transform: translate(-50%, -26px) }
+          52%, 100% { transform: translate(-50%, 0); opacity: 1 }
+        }
+        .bk-drop { animation: bk-drop 2.6s cubic-bezier(.3,.7,.4,1) both; }
+        @keyframes bk-orbit { to { transform: rotate(360deg) } }
+        .bk-orbit { animation: bk-orbit 9s linear infinite; }
+        @keyframes bk-scan { 0% { opacity: 0; letter-spacing: .5em } 20%, 70% { opacity: 1; letter-spacing: .22em } 100% { opacity: 0 } }
+        .bk-scan { animation: bk-scan 2.4s ease both; }
+        @media (prefers-reduced-motion: reduce) { .bk-meridian, .bk-ping, .bk-star, .bk-orbit { animation: none } }
       `}</style>
 
       {/* night sky */}
@@ -218,16 +255,24 @@ export default function Beacon({ onSignIn }) {
         ))}
       </div>
 
-      <Globe burst={!!joined} />
+      <Globe burst={!!joined} arriving={intro} />
 
+      {/* opening shot caption */}
+      {intro && (
+        <div className="bk-scan pointer-events-none absolute inset-x-0 top-[13vh] z-10 text-center font-mono text-[11px] font-bold uppercase text-lime" aria-hidden="true">
+          scanning umass amherst…
+        </div>
+      )}
+
+      {!intro && (<>
       {/* top bar */}
-      <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 py-5 sm:px-8">
+      <motion.div initial={{ opacity: 0, y: -8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.5 }} className="absolute inset-x-0 top-0 z-10 flex items-center justify-between px-5 py-5 sm:px-8">
         <a href={BACK_TO} className="flex items-center gap-2.5 text-[#F5F1E6] no-underline">
           <span className="grid h-7 w-7 place-items-center rounded-[9px] border-2 border-white bg-lime text-[13px]">📍</span>
           <span className="font-display text-[18px] font-bold tracking-tight">foundthelost</span>
         </a>
         <span className="font-mono text-[10.5px] font-bold uppercase tracking-[0.16em] text-[#F5F1E6]/55">make lost temporary</span>
-      </div>
+      </motion.div>
 
       <div className="relative z-10 flex h-full flex-col items-center px-5 pb-[32vh] pt-24 sm:pt-28">
         <AnimatePresence mode="wait">
@@ -348,6 +393,14 @@ export default function Beacon({ onSignIn }) {
                   )}
                 </AnimatePresence>
               </div>
+              {/* curious first? the landing page explains the whole product */}
+              <a
+                href={BACK_TO}
+                className="mt-6 inline-flex items-center gap-2.5 rounded-2xl border border-white/15 bg-white/[0.04] px-5 py-3.5 font-mono text-[12px] font-bold uppercase tracking-[0.1em] text-[#F5F1E6]/85 no-underline backdrop-blur transition hover:border-lime/60 hover:text-[#F5F1E6]"
+              >
+                <svg aria-hidden="true" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="9" /><path d="M3 12h18" /><path d="M12 3c2.8 3 2.8 15 0 18M12 3c-2.8 3-2.8 15 0 18" /></svg>
+                see how foundthelost works →
+              </a>
             </motion.div>
           ) : (
             <motion.div
@@ -427,6 +480,7 @@ export default function Beacon({ onSignIn }) {
       >
         beta tester? <span className="underline decoration-lime decoration-2 underline-offset-[3px]">sign in</span>
       </button>
+      </>)}
     </motion.div>
   )
 }
