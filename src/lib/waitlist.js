@@ -7,8 +7,13 @@ const KEY = 'ftl-waitlist-v1' // { code, email, position } for the person who jo
 const DEMO_DB = 'ftl-waitlist-demo'
 const DEMO_BASE = 1284 // matches the landing-page ticker
 
-/** Launched: the waitlist is OFF unless VITE_WAITLIST=on is set explicitly (hype phase is over). */
-export const WAITLIST_ON = (import.meta.env.VITE_WAITLIST || 'off').toLowerCase() === 'on'
+/**
+ * Private-beta gate (Nov 2026): ON unless VITE_PRIVATE_BETA=off. New visitors to /app see the
+ * Beacon waitlist; signed-in beta testers go straight in. A separate variable from the old
+ * VITE_WAITLIST on purpose, so a leftover Netlify setting can't switch the gate off, and so
+ * scripts/lock-landing.mjs keeps publishing the landing page.
+ */
+export const WAITLIST_ON = (import.meta.env.VITE_PRIVATE_BETA || 'on').toLowerCase() !== 'off'
 
 /** First N sign-ups are founding members (badge + karma head start + giveaway entry). */
 export const FOUNDING_CAP = 500

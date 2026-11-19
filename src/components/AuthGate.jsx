@@ -187,13 +187,25 @@ export default function AuthGate({ onDone, onWaitlist }) {
             >
               {busy ? '…' : mode === 'signin' ? 'sign in' : mode === 'forgot' ? 'send reset link' : 'create account'}
             </motion.button>
-            <button
-              type="button"
-              onClick={() => { setMode((m) => (m === 'signin' ? 'signup' : 'signin')); setError('') }}
-              className="w-full py-1 text-center text-[13px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
-            >
-              {mode === 'signin' ? 'New here? Create an account' : mode === 'forgot' ? '← Back to sign in' : 'Already have an account? Sign in'}
-            </button>
+            {/* private beta: no new accounts from the UI, only sign in / reset */}
+            {(!WAITLIST_ON || mode !== 'signin') && (
+              <button
+                type="button"
+                onClick={() => { setMode((m) => (m === 'signin' ? 'signup' : 'signin')); setError('') }}
+                className="w-full py-1 text-center text-[13px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
+              >
+                {mode === 'signin' ? 'New here? Create an account' : mode === 'forgot' ? '← Back to sign in' : 'Already have an account? Sign in'}
+              </button>
+            )}
+            {WAITLIST_ON && onWaitlist && mode === 'signin' && (
+              <button
+                type="button"
+                onClick={onWaitlist}
+                className="w-full py-1 text-center text-[13px] font-medium text-slate-500 transition hover:text-ink dark:hover:text-white"
+              >
+                Not in the beta yet? <span className="underline decoration-lime decoration-2 underline-offset-[3px]">Join the waitlist</span>
+              </button>
+            )}
 
           </form>
         )}

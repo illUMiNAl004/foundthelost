@@ -10,7 +10,7 @@ import AuthGate from './components/AuthGate.jsx'
 import ResetPassword from './components/ResetPassword.jsx'
 import ChatPanel from './components/ChatPanel.jsx'
 import LeaderboardPanel from './components/LeaderboardPanel.jsx'
-import Waitlist from './components/Waitlist.jsx'
+import Beacon from './components/Beacon.jsx'
 import { WAITLIST_ON } from './lib/waitlist.js'
 import { isLocked } from './lib/ownership.js'
 import { useAuth } from './hooks/useAuth.jsx'
@@ -282,9 +282,9 @@ export default function App() {
         {panel === 'board' && <LeaderboardPanel key="board" onClose={() => setPanel(null)} />}
       </AnimatePresence>
 
-      {/* pre-launch waitlist (cream screen, sits under the loader so it slides up into view) */}
+      {/* private-beta gate (sits under the loader so it slides up into view) */}
       <AnimatePresence>
-        {phase === 'waitlist' && <Waitlist key="waitlist" onSignIn={() => setPhase('auth')} />}
+        {phase === 'waitlist' && <Beacon key="waitlist" onSignIn={() => setPhase('auth')} />}
       </AnimatePresence>
 
       {/* auth gate */}
