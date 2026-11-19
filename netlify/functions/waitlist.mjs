@@ -11,7 +11,8 @@
 // allow 5 tries, and can be re-sent once a minute (5 an hour).
 //
 // Server-side env (Netlify → Site configuration → Environment variables):
-//   SUPABASE_SERVICE_ROLE_KEY   Supabase → Project Settings → API → service_role (secret)
+//   SUPABASE_SERVICE_ROLE_KEY   Supabase → Project Settings → API keys → a secret key (sb_secret_…)
+//                               or the legacy service_role JWT
 //   SMTP_HOST SMTP_PORT SMTP_USER SMTP_PASS MAIL_FROM
 //     Gmail: smtp.gmail.com · 465 · you@gmail.com · a Google *app password* · you@gmail.com
 //     Brevo: smtp-relay.brevo.com · 587 · Brevo login · Brevo SMTP key · a verified sender
@@ -56,7 +57,9 @@ function settings(env) {
 
 // tiny PostgREST client with the service role (bypasses RLS; server-side only)
 function db(s) {
-  const headers = { apikey: s.key, Authorization: `Bearer ${s.key}`, 'Content-Type': 'application/json' }
+  // new-style secret keys (sb_secret_…) go in `apikey` only; legacy service_role JWTs also as Bearer
+  const headers = { apikey: s.key, 'Content-Type': 'application/json' }
+  if (s.key.startsWith('eyJ')) headers.Authorization = `Bearer ${s.key}`
   return async (path, { method = 'GET', body, prefer } = {}) => {
     const r = await fetch(`${s.url}/rest/v1/${path}`, {
       method,
