@@ -15,6 +15,29 @@ function devApi(env) {
         }
         next()
       })
+      // /api/waitlist (email-code verification) — same bridge as /api/vision below
+      server.middlewares.use('/api/waitlist', async (req, res) => {
+        try {
+          const mod = await server.ssrLoadModule('/netlify/functions/waitlist.mjs')
+          const chunks = []
+          for await (const c of req) chunks.push(c)
+          const body = Buffer.concat(chunks)
+          const request = new Request(`http://${req.headers.host}${req.originalUrl || req.url}`, {
+            method: req.method,
+            headers: req.headers,
+            body: ['GET', 'HEAD'].includes(req.method) ? undefined : body,
+          })
+          const response = await mod.handleWaitlist(request, { ...process.env, ...env })
+          res.statusCode = response.status
+          response.headers.forEach((v, k) => res.setHeader(k, v))
+          res.end(Buffer.from(await response.arrayBuffer()))
+        } catch (e) {
+          console.error('[dev api]', e)
+          res.statusCode = 500
+          res.setHeader('Content-Type', 'application/json')
+          res.end(JSON.stringify({ error: e.message }))
+        }
+      })
       server.middlewares.use('/api/vision', async (req, res) => {
         try {
           const mod = await server.ssrLoadModule('/netlify/functions/vision.mjs')

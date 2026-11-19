@@ -57,6 +57,32 @@ export function savedStanding() {
 function remember(s) {
   try { localStorage.setItem(KEY, JSON.stringify(s)) } catch { /* private mode */ }
 }
+/** After a verified join (the server added them), remember them on this device. */
+export function rememberJoined(email, code, position) {
+  remember({ code: code || null, email, position: position ?? null })
+}
+
+/** Email-code verification for the waitlist (netlify/functions/waitlist.mjs). */
+export async function verificationEnabled() {
+  if (!isLive) return false
+  try {
+    const r = await fetch('/api/waitlist', { headers: { Accept: 'application/json' } })
+    if (!r.ok) return false
+    return !!(await r.json()).verify
+  } catch { return false }
+}
+export async function waitlistApi(body) {
+  let r
+  try {
+    r = await fetch('/api/waitlist', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  } catch {
+    throw Object.assign(new Error("Can't reach the server right now. Try again in a moment."), {})
+  }
+  let data = {}
+  try { data = await r.json() } catch { /* empty */ }
+  if (!r.ok) throw Object.assign(new Error(data.error || 'Something went wrong. Try again in a moment.'), { status: r.status, data })
+  return data
+}
 
 /* ---- demo store ---- */
 function demoLoad() {

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { joinWaitlist, savedStanding } from '../lib/waitlist.js'
+import { joinWaitlist, savedStanding, rememberJoined, verificationEnabled, waitlistApi } from '../lib/waitlist.js'
 
 // Private-beta gate. A dark, quiet "search party" screen: a dotted globe turning in the
 // dark, one coral pin pinging on it. Join with a UMass email → the pin answers with a
@@ -89,7 +89,20 @@ export default function Beacon({ onSignIn }) {
   // returning visitors who already joined land straight on the "you're in" screen
   const [joined, setJoined] = useState(() => (saved?.email ? { email: saved.email, existing: true } : null))
   const [left, setLeft] = useState(RETURN_AFTER)
+  const [verifyOn, setVerifyOn] = useState(false) // email-code check, once the server side is set up
+  const [step, setStep] = useState('email') // 'email' | 'code'
+  const [code, setCode] = useState('')
+  const [cooldown, setCooldown] = useState(0) // seconds until "send again" is allowed
+  const [note, setNote] = useState('')
   const inputRef = useRef(null)
+  const codeRef = useRef(null)
+
+  useEffect(() => { verificationEnabled().then(setVerifyOn) }, [])
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
 
   // after joining: count down, then home to the landing page
   useEffect(() => {
@@ -110,12 +123,58 @@ export default function Beacon({ onSignIn }) {
     }
     setBusy(true)
     try {
-      const r = await joinWaitlist(clean, { source: 'beta-gate' })
-      setLeft(RETURN_AFTER)
-      setJoined({ email: clean, existing: !!r?.existing })
+      if (verifyOn) {
+        await sendCode(clean)
+      } else {
+        const r = await joinWaitlist(clean, { source: 'beta-gate' })
+        setLeft(RETURN_AFTER)
+        setJoined({ email: clean, existing: !!r?.existing })
+      }
     } catch (err) {
       setError(err.message || 'Something went wrong. Try again in a moment.')
       inputRef.current?.focus()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // email a 6-digit code; a "wait a minute" answer still moves them to the code step
+  const sendCode = async (clean) => {
+    try {
+      const r = await waitlistApi({ action: 'send', email: clean })
+      setCooldown(r.retryIn || 60)
+      setNote(`We sent a 6-digit code to ${clean}. Check your Junk folder too.`)
+    } catch (err) {
+      if (err.status !== 429 || !err.data?.retryIn) throw err
+      setCooldown(err.data.retryIn)
+      setNote(err.message)
+    }
+    setEmail(clean)
+    setCode('')
+    setStep('code')
+    setTimeout(() => codeRef.current?.focus(), 350)
+  }
+
+  const resend = async () => {
+    setError('')
+    setBusy(true)
+    try { await sendCode(email) } catch (err) { setError(err.message) } finally { setBusy(false) }
+  }
+
+  const submitCode = async (e) => {
+    e?.preventDefault()
+    setError('')
+    if (!/^\d{6}$/.test(code)) { setError('The code is 6 digits.'); codeRef.current?.focus(); return }
+    setBusy(true)
+    try {
+      const r = await waitlistApi({ action: 'verify', email, code })
+      rememberJoined(email, r.referral_code, r.position)
+      setLeft(RETURN_AFTER)
+      setJoined({ email, existing: !!r.existing })
+    } catch (err) {
+      setError(err.message)
+      if (err.data?.expired) setCode('')
+      codeRef.current?.focus()
     } finally {
       setBusy(false)
     }
@@ -125,6 +184,8 @@ export default function Beacon({ onSignIn }) {
     try { localStorage.removeItem('ftl-waitlist-v1') } catch { /* private mode */ }
     setJoined(null)
     setEmail('')
+    setCode('')
+    setStep('email')
   }
 
   return (
@@ -192,34 +253,89 @@ export default function Beacon({ onSignIn }) {
                 <br />
                 is <span className="text-lime">out there.</span>
               </h1>
-              <p className="mt-5 max-w-[36ch] text-[15.5px] leading-relaxed text-[#F5F1E6]/65">
+              <p className={`mt-5 max-w-[36ch] text-[15.5px] leading-relaxed text-[#F5F1E6]/65 ${step === 'code' ? 'hidden sm:block' : ''}`}>
                 We're quietly testing with a small group first. Join the search with your UMass email and you'll be among the first let in.
               </p>
 
-              <form onSubmit={submit} className="mt-7 w-full max-w-md">
-                <div className="flex flex-col gap-2.5 rounded-[22px] border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl sm:flex-row">
-                  <label htmlFor="bk-email" className="sr-only">UMass email</label>
-                  <input
-                    id="bk-email"
-                    ref={inputRef}
-                    type="email"
-                    inputMode="email"
-                    autoComplete="email"
-                    placeholder="you@umass.edu"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    required
-                    autoFocus
-                    className="min-w-0 flex-1 rounded-2xl bg-transparent px-4 py-3.5 text-[15px] text-[#F5F1E6] outline-none placeholder:text-[#F5F1E6]/35"
-                  />
-                  <motion.button
-                    whileTap={{ scale: 0.97 }}
-                    disabled={busy}
-                    className="rounded-2xl bg-lime px-5 py-3.5 font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] text-ink shadow-[0_10px_30px_rgba(217,241,84,0.35)] disabled:opacity-60"
+              <AnimatePresence mode="wait" initial={false}>
+                {step === 'email' ? (
+                  <motion.form
+                    key="email"
+                    onSubmit={submit}
+                    initial={{ opacity: 0, x: -16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -16 }}
+                    transition={SPRING}
+                    className="mt-7 w-full max-w-md"
                   >
-                    {busy ? 'sending signal…' : 'join the search →'}
-                  </motion.button>
-                </div>
+                    <div className="flex flex-col gap-2.5 rounded-[22px] border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl sm:flex-row">
+                      <label htmlFor="bk-email" className="sr-only">UMass email</label>
+                      <input
+                        id="bk-email"
+                        ref={inputRef}
+                        type="email"
+                        inputMode="email"
+                        autoComplete="email"
+                        placeholder="you@umass.edu"
+                        value={email}
+                        onChange={(e) => setEmail(e.target.value)}
+                        required
+                        autoFocus
+                        className="min-w-0 flex-1 rounded-2xl bg-transparent px-4 py-3.5 text-[15px] text-[#F5F1E6] outline-none placeholder:text-[#F5F1E6]/35"
+                      />
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        disabled={busy}
+                        className="rounded-2xl bg-lime px-5 py-3.5 font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] text-ink shadow-[0_10px_30px_rgba(217,241,84,0.35)] disabled:opacity-60"
+                      >
+                        {busy ? 'sending signal…' : 'join the search →'}
+                      </motion.button>
+                    </div>
+                  </motion.form>
+                ) : (
+                  <motion.form
+                    key="code"
+                    onSubmit={submitCode}
+                    initial={{ opacity: 0, x: 16 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 16 }}
+                    transition={SPRING}
+                    className="mt-7 w-full max-w-md"
+                  >
+                    <p className="mb-3 text-[13.5px] leading-relaxed text-[#F5F1E6]/70" aria-live="polite">{note}</p>
+                    <div className="flex flex-col gap-2.5 rounded-[22px] border border-white/10 bg-white/[0.05] p-2 backdrop-blur-xl sm:flex-row">
+                      <label htmlFor="bk-code" className="sr-only">6-digit code</label>
+                      <input
+                        id="bk-code"
+                        ref={codeRef}
+                        inputMode="numeric"
+                        autoComplete="one-time-code"
+                        pattern="[0-9]*"
+                        maxLength={6}
+                        placeholder="••••••"
+                        value={code}
+                        onChange={(e) => {
+                          const v = e.target.value.replace(/\D/g, '').slice(0, 6)
+                          setCode(v)
+                        }}
+                        className="min-w-0 flex-1 rounded-2xl bg-transparent px-4 py-3.5 text-center font-mono text-[24px] font-bold tracking-[0.45em] text-[#F5F1E6] outline-none placeholder:text-[#F5F1E6]/25 sm:text-left"
+                      />
+                      <motion.button
+                        whileTap={{ scale: 0.97 }}
+                        disabled={busy}
+                        className="rounded-2xl bg-lime px-5 py-3.5 font-mono text-[12.5px] font-bold uppercase tracking-[0.08em] text-ink shadow-[0_10px_30px_rgba(217,241,84,0.35)] disabled:opacity-60"
+                      >
+                        {busy ? 'checking…' : 'verify →'}
+                      </motion.button>
+                    </div>
+                    <div className="mt-3 flex items-center justify-between gap-3 text-[12.5px] font-medium text-[#F5F1E6]/50">
+                      <button type="button" onClick={() => { setStep('email'); setError(''); setCode('') }} className="transition hover:text-[#F5F1E6]">
+                        ← use another email
+                      </button>
+                      <button type="button" onClick={resend} disabled={busy || cooldown > 0} className="transition hover:text-[#F5F1E6] disabled:opacity-50">
+                        {cooldown > 0 ? `send again in ${cooldown}s` : 'send a new code'}
+                      </button>
+                    </div>
+                  </motion.form>
+                )}
+              </AnimatePresence>
+              <div className="w-full max-w-md">
                 <AnimatePresence>
                   {error && (
                     <motion.div
@@ -231,7 +347,7 @@ export default function Beacon({ onSignIn }) {
                     </motion.div>
                   )}
                 </AnimatePresence>
-              </form>
+              </div>
             </motion.div>
           ) : (
             <motion.div

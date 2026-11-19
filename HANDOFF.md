@@ -327,3 +327,22 @@ Verified headlessly (playwright-core + cached Chromium): waitlist → sign in �
 lost report (chips: navy · hydro flask · ILC · 1pm; place auto-pinned) → instant match 93–100 % →
 photo found-report (synthetic bottle → `water_bottle`, blue/white, metal, "UMASS" text, 2 s) →
 matching lost report → chat. `npm run build` green.
+
+# Addendum — Nov 19 2026: private-beta gate + verified waitlist
+
+- `/app` without a session shows `src/components/Beacon.jsx` (dark globe, "something you lost is
+  out there"). Switch: `VITE_PRIVATE_BETA` (default on; `off` = launched). Signed-in beta
+  testers go straight in; the sign-in screen no longer offers "create an account".
+- Email-code check: `netlify/functions/waitlist.mjs` (`/api/waitlist`) emails a 6-digit code over
+  SMTP and only adds the person after the right code (10 min expiry, 5 tries, resend once a
+  minute / 5 an hour). Codes are salted hashes in `waitlist_codes`; `waitlist.verified_at` marks
+  who proved their inbox.
+- Turning it on, in this order:
+  1. Netlify → Environment variables: `SUPABASE_SERVICE_ROLE_KEY`, `SMTP_HOST`, `SMTP_PORT`,
+     `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` (Gmail app password or Brevo; Resend needs a domain).
+  2. Redeploy.
+  3. Run `supabase/migrations/012_waitlist_verify.sql` in the SQL editor.
+  The page checks `GET /api/waitlist` and only switches to the code step once both the env vars
+  and the table exist; before that it uses the old direct join. After 012 the browser can no
+  longer call `join_waitlist` directly.
+- The list: `select email, verified_at, source, created_at from public.waitlist order by created_at desc;`
