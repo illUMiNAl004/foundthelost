@@ -44,11 +44,11 @@ function ipAllowed(req, limit = 30) {
 function settings(env) {
   const s = {
     url: env.SUPABASE_URL || env.VITE_SUPABASE_URL,
-    key: env.SUPABASE_SERVICE_ROLE_KEY,
+    key: (env.SUPABASE_SERVICE_ROLE_KEY || '').trim().replace(/^['"]|['"]$/g, ''),
     host: env.SMTP_HOST,
     port: Number(env.SMTP_PORT || 465),
     user: env.SMTP_USER,
-    pass: env.SMTP_PASS,
+    pass: (env.SMTP_PASS || '').replace(/\s+/g, ''),
     from: env.MAIL_FROM || env.SMTP_USER,
   }
   s.ready = !!(s.url && s.key && s.host && s.user && s.pass && s.from)
@@ -182,6 +182,17 @@ export async function handleWaitlist(req, env = process.env) {
   const q = s.url && s.key ? db(s) : null
 
   if (req.method === 'GET') {
+    if (new URL(req.url).searchParams.has('diag')) {
+      // setup check without revealing anything secret: which pieces exist, the key's shape, the DB's answer
+      const k = s.key || ''
+      let db_check = 'skipped'
+      if (q) { try { await q('waitlist_codes?select=email&limit=1'); db_check = 'ok' } catch (e) { db_check = `${e.status || ''} ${String(e.message).slice(0, 120)}` } }
+      return reply(200, {
+        url: !!s.url, key: !!k, smtp: !!(s.host && s.user && s.pass), from: !!s.from,
+        key_kind: k.startsWith('sb_secret_') ? 'sb_secret' : k.startsWith('sb_publishable_') ? 'PUBLISHABLE (wrong key)' : k.startsWith('eyJ') ? 'jwt' : k ? 'unknown' : 'missing',
+        key_len: k.length, key_has_whitespace: /\s/.test(k), db_check,
+      })
+    }
     return reply(200, { verify: s.ready && !!q && (await codesTableReady(q)) })
   }
   if (req.method !== 'POST') return reply(405, { error: 'method not allowed' })
